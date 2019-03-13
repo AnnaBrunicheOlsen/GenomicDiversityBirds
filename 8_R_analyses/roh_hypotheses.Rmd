@@ -1,0 +1,331 @@
+---
+title: "ROH/Heterozygosity Hypotheses"
+author: "Anna Brueniche-Olsen and Ken Kellner"
+date: "July 14, 2017"
+output: pdf_document
+---
+
+#Hypothesis 1
+
+Threatened species have lower genome-wide genetic diversity ($\theta$), a larger number of ROHs, a larger mean ROH length, and a larger proportion of their genome in ROHs than non-threatened species, 
+
+```{r echo=FALSE,fig.height=6}
+roh20 <- read.csv('roh20X_latlong.csv',header=T)[1:63,]
+
+het <- log(1000*roh20$heterozygosity..H_genome.)
+redlist <- roh20$Red_list_groups
+
+keep <- redlist!='D'
+
+het.sub <- het[keep]
+redlist.sub <- redlist[keep]
+
+par(mfrow=c(2,2))
+
+mns <- c(mean(het.sub[redlist.sub=='T']),mean(het.sub[redlist.sub=='N']))
+sds <- c(sd(het.sub[redlist.sub=='T']),sd(het.sub[redlist.sub=='N']))
+cnt <- table(redlist.sub)[-1]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,col=c('red','blue'),names=c('Threatened','Not Threatened'),ylab="log(heterozygosity*1000)±SE",
+        main = "Heterozygosity",ylim=c(0,1.1))
+
+x <- as.vector(x)
+
+segments(x,mns-se,x,mns+se)
+
+out <- t.test(het.sub~redlist.sub,alternative="greater")
+text(x[1],0.8,paste('p =',round(out$p.value,3)),cex=1.3)
+
+text(x,mns+se+0.03,cnt)
+
+numrohs <- log(roh20$number.of.ROHs)[keep]
+lenrohs <- log(roh20$mean.ROH.length..Kbp.)[keep]
+proprohs <- log(1000*roh20$total.number.of.SNPs.in.ROHs/roh20$total.number.of.SNPs)[keep]
+
+#Number of ROHs
+mns <- c(mean(numrohs[redlist.sub=='T']),mean(numrohs[redlist.sub=='N']))
+sds <- c(sd(numrohs[redlist.sub=='T']),sd(numrohs[redlist.sub=='N']))
+cnt <- table(redlist.sub)[-1]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,col=c('red','blue'),names=c('Threatened','Not Threatened'),ylab="log(number of ROHs)±SE",
+             main = "Number of ROHs",ylim=c(0,6))
+x <- as.vector(x)
+
+segments(x,mns-se,x,mns+se)
+
+out <- t.test(numrohs~redlist.sub,alternative="less")
+text(x[2],5.5,paste('p =',round(out$p.value,3)),cex=1.3)
+text(x,mns+se+0.1,cnt)
+
+#Mean ROH length
+mns <- c(mean(lenrohs[redlist.sub=='T']),mean(lenrohs[redlist.sub=='N']))
+sds <- c(sd(lenrohs[redlist.sub=='T']),sd(lenrohs[redlist.sub=='N']))
+cnt <- table(redlist.sub)[-1]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,col=c('red','blue'),names=c('Threatened','Not Threatened'),ylab="log(mean ROH length)±SE",
+             main = "Mean ROH Length",ylim=c(0,5))
+x <- as.vector(x)
+
+segments(x,mns-se,x,mns+se)
+
+out <- t.test(lenrohs~redlist.sub,alternative="less")
+text(x[2],4.5,paste('p =',round(out$p.value,3)),cex=1.3)
+text(x,mns+se+0.1,cnt)
+
+#Prop ROHs (based on SNPs)
+mns <- c(mean(proprohs[redlist.sub=='T']),mean(proprohs[redlist.sub=='N']))
+sds <- c(sd(proprohs[redlist.sub=='T']),sd(proprohs[redlist.sub=='N']))
+cnt <- table(redlist.sub)[-1]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,col=c('red','blue'),names=c('Threatened','Not Threatened'),ylab="log(1000*proportion ROHs)±SE",
+             main = "Proportion in ROHs",ylim=c(-0.3,3))
+x <- as.vector(x)
+
+segments(x,mns-se,x,mns+se)
+
+out <- t.test(proprohs~redlist.sub,alternative="less")
+text(x[2],1.5,paste('p =',round(out$p.value,3)),cex=1.3)
+text(x,mns+se+0.1,cnt)
+
+```
+
+\pagebreak
+
+#Hypothesis 2
+
+Genetic diversity increases and the number and size of ROHs decreases with trophic level from carnivore, to herbivore, to omnivore.
+
+```{r echo=FALSE, fig.height=6}
+
+par(mfrow=c(2,2))
+
+het <- log(10000*roh20$heterozygosity..H_genome.)
+
+diet <- roh20$Class.of.Consumption
+tab <- data.frame(het=het,diet=diet)
+
+mns <- with(tab,tapply(het,diet,mean))
+sds <- with(tab,tapply(het,diet,sd))
+cnt <- table(diet)
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore','Omnivore'),
+             col=c('Red','Green','Blue'),
+             ylab="log(10000*heterozygosity)±SE",
+             ylim=c(0,4),main='Heterozygosity')
+
+segments(x,mns+se,x,mns-se)
+
+test = aov(het~diet)
+text(x[1],3.5,paste('p =',round(summary(test)[[1]][1,5],3)),cex=1.3)
+text(x,mns+se+0.1,cnt)
+
+numrohs <- log(roh20$number.of.ROHs)
+lenrohs <- log(roh20$mean.ROH.length..Kbp.)
+proprohs <- log(1000*roh20$total.number.of.SNPs.in.ROHs/roh20$total.number.of.SNPs)
+
+tab <- data.frame(numrohs=numrohs,diet=diet)
+mns <- with(tab,tapply(numrohs,diet,mean))
+sds <- with(tab,tapply(numrohs,diet,sd))
+cnt <- table(diet)
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore','Omnivore'),
+             col=c('Red','Green','Blue'),
+             ylab="log(number of ROHs)±SE",
+             ylim=c(0,6.5),main='Number of ROHs')
+segments(x,mns+se,x,mns-se)
+
+test = aov(numrohs~diet)
+
+text(x[1]+0.1,6.2,paste('p =',round(summary(test)[[1]][1,5],3)),cex=1.3)
+text(x,mns+se+0.2,cnt)
+##
+tab <- data.frame(lenrohs=lenrohs,diet=diet)
+mns <- with(tab,tapply(lenrohs,diet,mean))
+sds <- with(tab,tapply(lenrohs,diet,sd))
+cnt <- table(diet)
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore','Omnivore'),
+             col=c('Red','Green','Blue'),
+             ylab="log(length of ROHs)±SE",
+             ylim=c(0,6),main='Mean Length of ROHs')
+segments(x,mns+se,x,mns-se)
+
+test = aov(lenrohs~diet)
+
+text(x[1]+0.1,5.7,paste('p =',round(summary(test)[[1]][1,5],3)),cex=1.3)
+text(x,mns+se+0.1,cnt)
+##
+tab <- data.frame(proprohs=proprohs,diet=diet)
+mns <- with(tab,tapply(proprohs,diet,mean))
+sds <- with(tab,tapply(proprohs,diet,sd))
+cnt <- table(diet)
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore','Omnivore'),
+             col=c('Red','Green','Blue'),
+             ylab="log(1000*proportion ROHs)±SE",
+             ylim=c(0,2),main='Proportion of ROHs')
+segments(x,mns+se,x,mns-se)
+
+test = aov(proprohs~diet)
+
+text(x[1]+0.1,1.9,paste('p =',round(summary(test)[[1]][1,5],3)),cex=1.3)
+text(x,mns+se+0.1,cnt)
+```
+
+\pagebreak
+
+#Hypothesis 3
+
+Genetic diversity increases with decreasing latitude so that species near the poles have lower genetic diversity than species closer to equator
+
+```{r echo=FALSE,fig.height=6}
+par(mfrow=c(2,2))
+
+lat <- roh20$lat
+
+het <- log(10000*roh20$heterozygosity..H_genome.)
+numrohs <- log(roh20$number.of.ROHs)
+lenrohs <- log(roh20$mean.ROH.length..Kbp.)
+proprohs <- log(1000*roh20$total.number.of.SNPs.in.ROHs/roh20$total.number.of.SNPs)
+
+plot(abs(lat),het,pch=19,
+             ylab="log(10000*heterozygosity)",
+             xlab="abs(latitude) of distribution centroid"
+             ,main='Heterozygosity')
+
+test = lm(het~abs(lat))
+abline(test)
+text(0,4.5,paste('p =',round(summary(test)[[4]][2,4],3)),cex=1.3,adj=c(0,0))
+
+##
+plot(abs(lat),numrohs,pch=19,
+             ylab="log(number of ROHs)",
+             xlab="abs(latitude) of distribution centroid"
+             ,main='Number of ROHs')
+
+test = lm(numrohs~abs(lat))
+abline(test)
+text(50,10,paste('p =',round(summary(test)[[4]][2,4],3)),cex=1.3,adj=c(0,0))
+
+##
+plot(abs(lat),lenrohs,pch=19,
+             ylab="log(length of ROHs)",
+             xlab="abs(latitude) of distribution centroid"
+             ,main='Mean Length of ROHs')
+
+test = lm(lenrohs~abs(lat))
+abline(test)
+text(0,7.1,paste('p =',round(summary(test)[[4]][2,4],3)),cex=1.3,adj=c(0,0))
+
+##
+plot(abs(lat),proprohs,pch=19,
+             ylab="log(1000*proportion ROHs)",
+             xlab="abs(latitude) of distribution centroid"
+             ,main='Proportion of ROHs')
+
+test = lm(proprohs~abs(lat))
+abline(test)
+text(50,-6,paste('p =',round(summary(test)[[4]][2,4],3)),cex=1.3,adj=c(0,0))
+```
+
+\pagebreak
+
+#Hypothesis 4
+
+Effects are stronger when factors are combined; i.e., if a species is carnivore and threatened it will have a lower genetic diversity, more and longer ROHs than threatened herbivores. 
+
+```{r echo=FALSE,fig.height=6}
+
+par(mfrow=c(2,2))
+
+keep <- redlist=='T'&diet%in%c('C','H')
+
+het <- log(10000*roh20$heterozygosity..H_genome.)[keep]
+numrohs <- log(roh20$number.of.ROHs)[keep]
+lenrohs <- log(roh20$mean.ROH.length..Kbp.)[keep]
+proprohs <- log(1000*roh20$total.number.of.SNPs.in.ROHs/roh20$total.number.of.SNPs)[keep]
+diet.sub <- diet[keep]
+
+
+##
+tab <- data.frame(het=het,diet=diet.sub)
+mns <- with(tab,tapply(het,diet,mean))[c(-3)]
+sds <- with(tab,tapply(het,diet,sd))[c(-3)]
+cnt <- table(diet.sub)[c(-3)]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore'),
+             col=c('Red','Green'),
+             ylab="log(10000*heterozygosity)±SE",
+             ylim=c(0,4),main='Heterozygosity')
+segments(x,mns+se,x,mns-se)
+
+text(x,mns+se+0.3,cnt)
+
+test = t.test(het~diet.sub,alternative='less')
+text(x[1],3.5,paste('p =',round(test$p.value,3)),cex=1.3)
+
+##
+tab <- data.frame(numrohs=numrohs,diet=diet.sub)
+mns <- with(tab,tapply(numrohs,diet,mean))[c(-3)]
+sds <- with(tab,tapply(numrohs,diet,sd))[c(-3)]
+cnt <- table(diet.sub)[c(-3)]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore'),
+             col=c('Red','Green'),
+             ylab="log(number of ROHs)±SE",
+             ylim=c(0,7),main='Number of ROHs')
+segments(x,mns+se,x,mns-se)
+
+test = t.test(numrohs~diet.sub,alternative='greater')
+text(x[1]+0.7,6.5,paste('p =',round(test$p.value,3)),cex=1.3)
+
+
+text(x,mns+se+0.3,cnt)
+##
+tab <- data.frame(lenrohs=lenrohs,diet=diet.sub)
+mns <- with(tab,tapply(lenrohs,diet,mean))[c(-3)]
+sds <- with(tab,tapply(lenrohs,diet,sd))[c(-3)]
+cnt <- table(diet.sub)[c(-3)]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore'),
+             col=c('Red','Green'),
+             ylab="log(mean length of ROHs)±SE",
+             ylim=c(0,6),main='Mean Length of ROHs')
+segments(x,mns+se,x,mns-se)
+
+test = t.test(lenrohs~diet.sub,alternative='greater')
+text(x[1],5.5,paste('p =',round(test$p.value,3)),cex=1.3)
+
+text(x,mns+se+0.3,cnt)
+
+##
+tab <- data.frame(proprohs=proprohs,diet=diet.sub)
+mns <- with(tab,tapply(proprohs,diet,mean))[c(-3)]
+sds <- with(tab,tapply(proprohs,diet,sd))[c(-3)]
+cnt <- table(diet.sub)[c(-3)]
+se <- sds/sqrt(cnt)
+
+x <- barplot(mns,names=c('Carnivore','Herbivore'),
+             col=c('Red','Green'),
+             ylab="log(1000*proportion of ROHs)±SE",
+             ylim=c(0,4),main='Proportion of ROHs')
+segments(x,mns+se,x,mns-se)
+
+test = t.test(proprohs~diet.sub,alternative='greater')
+text(x[1]+0.7,3.5,paste('p =',round(test$p.value,3)),cex=1.3)
+
+text(x,mns+se+0.3,cnt)
+
+
+```

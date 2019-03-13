@@ -1,0 +1,9 @@
+# copy ref
+cp ref.fa ref_ORIGINAL.fa
+
+#find replace in reference
+sed -i -e 's/_Apteryx.*//g' ref.fa
+
+# change spacer
+sed -i -e 's/_/|/g' ref.fa
+

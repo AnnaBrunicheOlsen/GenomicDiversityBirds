@@ -1,0 +1,36 @@
+Podiceps_cristatus
+Anas zonorhyncha
+Anser brachyrhynchus
+Antrostomus carolinensis
+Apteryx_haasti
+Apteryx_owenii
+Apteryx_rowi
+Bambusicola_thoracicus
+Calidris_pygmaea
+Casuarius_casuarius
+Chlamydotis_macqueenii
+Colius_striatus
+Corapipo_altera
+Corvus_brachyrhynchos
+Coturnix_japonica
+Crypturellus_cinnamomeus
+Dromaius_novaehollandiae
+Erythrura_gouldiae
+Eudromia_elegans
+Grus_japonensis
+Haliaeetus_leucocephalus
+Hemignathus_virens
+Limosa_lapponica_baueri
+Lyrurus_tetrix_tetrix
+Nothoprocta perdicaria
+Paradisaea_rubra
+Patagioenas_fasciata_monilis
+Phoenicopterus_ruber_ruber
+Pseudopodoces_humilis
+Saxicola_maurus_maurus
+Sporophila hypoxantha
+Strigops_habroptila 
+Syrmaticus_mikado
+Tyto alba
+Uria lomvia
+Zonotrichia albicollis
