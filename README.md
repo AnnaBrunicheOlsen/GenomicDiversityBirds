@@ -1,5 +1,5 @@
 # Runs-of-homozygosity-in-birds
-These scripts are developed for the Darwins finches and related tanagers project.
+These scripts are developed for a project investigating genomic diversity and inbreeding in birds.
 
 March 2019
 
