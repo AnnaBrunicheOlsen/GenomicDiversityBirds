@@ -8,10 +8,10 @@ library(readxl)
 
 #------------------------------------------------------------------------------
 #Read in data
-raw_genetics <- read_excel('data/bird_ROH_lifehistory_19032019.xlsx',
+raw_genetics <- read_excel('data/bird_ROH_lifehistory_28032019.xlsx',
                            sheet='genomic_diviersity')
 
-raw_covs <- read_excel('data/bird_ROH_lifehistory_19032019.xlsx',
+raw_covs <- read_excel('data/bird_ROH_lifehistory_28032019.xlsx',
                        sheet='lifehistory')
 
 #------------------------------------------------------------------------------
@@ -45,9 +45,10 @@ cov_data <- raw_covs %>%
                       populationTrend %in% c('Increasing','Stable') ~ 0),
          mass = as.numeric(adultBodyMassGram),
          gentime = as.numeric(generationTimeIUCNyears),
-         migrates = ifelse(movementPatterns=='migrant',1,0) 
+         migrates = ifelse(movementPatterns=='migrant',1,0),
+         flying = as.numeric(flyingOrNot=="flight") 
          ) %>%
-  select(species,threatened,carnivore,declining,mass,gentime,migrates)
+  select(species,threatened,carnivore,declining,mass,gentime,migrates,flying)
 options(warn=0)
 
 #Combine

@@ -1,7 +1,4 @@
 #------------------------------------------------------------------------------
-#Load libraries
-library(ggplot2)
-
 #Load clean dataset
 
 source('clean_data.R')
@@ -22,8 +19,8 @@ genetic_data %>%
   geom_histogram() +
   facet_wrap(~var,scales='free')
 
-#Correlations of log-transformed
-log(genetic_data %>% select(-species) + 0.05) %>%
+#Correlations
+genetic_data %>% select(-species) %>%
   cor() %>%
   round(.,3)
 
@@ -35,10 +32,5 @@ cov_data %>% select(-species) %>%
   cor(use='complete.obs') %>%
   round(.,3)
 
-
-#------------------------------------------------------------------------------
-#Run some tests
-
-test <- lm(log(het+0.05)~threatened+carnivore+migrates, data=all_data)
 
 
