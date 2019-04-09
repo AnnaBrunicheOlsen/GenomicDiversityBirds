@@ -8,10 +8,10 @@ library(readxl)
 
 #------------------------------------------------------------------------------
 #Read in data
-raw_genetics <- read_excel('data/bird_ROH_lifehistory_28032019.xlsx',
+raw_genetics <- read_excel('data/bird_ROH_lifehistory_03042019.xlsx',
                            sheet='genomic_diviersity')
 
-raw_covs <- read_excel('data/bird_ROH_lifehistory_28032019.xlsx',
+raw_covs <- read_excel('data/bird_ROH_lifehistory_03042019.xlsx',
                        sheet='lifehistory')
 
 #------------------------------------------------------------------------------
@@ -33,22 +33,32 @@ genetic_data <- raw_genetics %>%
 
 options(warn=-1)
 cov_data <- raw_covs %>%
-  rename(species = `Genus _Species`) %>%
+  rename(species = `Genus_Species`) %>%
   mutate(species = str_replace(species,' ','')) %>%
   mutate(species = case_when(
                     species == 'Apteryx_haastii' ~ 'Apteryx_haasti',
                     TRUE ~ species)) %>%
   mutate(threatened = ifelse(threatenedNonthreatened=='TR',1,0),
-         carnivore = ifelse(`Diet _5Cat`=='VertFishScav',1,0),
+         thr4 = case_when(GlobalIUCNRedListCategory%in%c('CR','EN') ~ 'EN',
+                          GlobalIUCNRedListCategory%in%c('DD','NA') ~ NA_character_,
+                          TRUE ~ GlobalIUCNRedListCategory),
+         thr4 = factor(thr4,levels=c('LC','VU','NT','EN')),
+         carnivore = ifelse(`Diet_5Cat`=='VertFishScav',1,0),
          declining = case_when(
                       populationTrend == 'Decreasing' ~ 1,
                       populationTrend %in% c('Increasing','Stable') ~ 0),
          mass = as.numeric(adultBodyMassGram),
          gentime = as.numeric(generationTimeIUCNyears),
          migrates = ifelse(movementPatterns=='migrant',1,0),
-         flying = as.numeric(flyingOrNot=="flight") 
+         flying = as.numeric(flyingOrNot=="flight"),
+         repro = as.numeric(litterOrClutchSizeNumber) * 
+           as.numeric(littersOrClutchesPerYears),
+         Diet_5Cat = factor(Diet_5Cat,levels=c('PlantSeed','FruiNect',
+                                               'Invertebrate','Omnivore',
+                                               'VertFishScav'))
          ) %>%
-  select(species,threatened,carnivore,declining,mass,gentime,migrates,flying)
+  select(species,threatened,carnivore,declining,mass,gentime,migrates,flying,
+         repro,Diet_5Cat,thr4)
 options(warn=0)
 
 #Combine
