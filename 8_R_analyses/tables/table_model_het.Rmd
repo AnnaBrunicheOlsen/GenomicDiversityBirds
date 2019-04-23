@@ -1,0 +1,40 @@
+---
+output:
+  officedown::rdocx_document:
+    toc: no
+---
+
+```{r,echo=F,warning=F,message=F}
+
+#Load libraries
+require(flextable)
+require(officer)
+setwd('..')
+source('clean_data.R')
+
+test <- lm(log(het)~carnivore+migrates+
+           scale(log(repro)), data=all_data)
+r2 <- round(summary(test)$adj.r.squared,2)
+```
+
+**Table X.** Output from the linear regression model for log(*H*), with R^2^=`r r2`. 
+
+```{r,echo=F,message=F,warning=F}
+pvals <- as.character(round(summary(test)$coefficients[,4],3))
+pvals <- paste0(pvals)
+pvals[which(pvals=='0')] <- '< 0.001'
+
+vals <- round(summary(test)$coefficients[,1:2],3)
+params <- c('Intercept','Diet = Carnivore','Migrates = yes', 'Repro capacity')
+tab <- as.data.frame(cbind(params,vals,pvals))
+names(tab) <- c('Parameter','Estimate','SE','P-value')
+row.names(tab) <- NULL
+
+f <- flextable(as.data.frame(tab))
+f <- theme_vanilla(f)
+f <- autofit(f)
+#  f <- align(f, j = c(4,7), align = "right", part = "all")
+#  f <- align(f, i = 1, align = 'center', part = "header")
+
+f
+```
