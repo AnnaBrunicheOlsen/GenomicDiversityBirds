@@ -1,0 +1,240 @@
+---
+title: "Impact of Covariates on Effective Pop Size"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+
+```{r}
+
+library(ggplot2)
+library(rstan)
+library(tidyverse)
+library(bayesplot)
+
+
+mod <- readRDS('stan_mod.Rds')
+dat <- readRDS('stan_data.Rds')
+
+sm <- summary(mod)$summary %>%
+  as.data.frame() %>%
+  rownames_to_column() %>%
+  as_tibble() %>%
+  rename(param=rowname)
+
+
+get_posterior <- function(param_names=NULL){  
+  param_names <- c('grand_mean', param_names)
+  pp <- sapply(param_names, function(x) rstan::extract(mod, x))
+  pp <- do.call("cbind", pp)
+  rs <- rowSums(pp)
+  c(mean=mean(rs), lower=as.numeric(quantile(rs,0.025)), 
+    upper=as.numeric(quantile(rs,0.975)))
+}
+
+mytheme <-   theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+  axis.text=element_text(size=14), axis.title=element_text(size=16))
+```
+
+## IUCN Status
+
+Different letters = significantly different
+
+```{r}
+
+diffs <- sm %>% 
+  filter(param %in% c('b_nt','b_vu','b_en','b_cr',
+                      'nt_vu','nt_en','nt_cr','vu_en','vu_cr','en_cr')) %>%
+  select(param,`2.5%`,`97.5%`)
+
+ann <- data.frame(mean=3.2, 
+                  cat=factor(c("LC","NT","VU","EN","CR"), 
+                       levels=c("LC","NT","VU","EN","CR")),
+                  lab=c('A','AB','B','AB','AB'))
+
+pd <- data.frame(rbind(get_posterior(), get_posterior('b_nt'),
+            get_posterior('b_vu'), get_posterior('b_cr'),
+            get_posterior('b_cr')))
+pd <- cbind(cat=factor(c("LC","NT","VU","EN","CR"), 
+                       levels=c("LC","NT","VU","EN","CR")),
+                       pd)
+
+pd %>%
+  ggplot(aes(x=cat, y=mean)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_text(data=ann, aes(label=lab), size=6) +
+  ylab(expression("log("*N[e]*")"~"± 95% CI")) +
+  xlab("IUCN status") +
+  mytheme
+
+```
+
+## Diet
+
+```{r}
+
+diffs <- sm %>% 
+  filter(param %in% c('b_fruit','b_plant','b_invert','b_omni',
+                      'fruit_plant','fruit_invert','fruit_omni','plant_invert',
+                      'plant_omni','invert_omni')) %>%
+  select(param,`2.5%`,`97.5%`)
+
+ann <- data.frame(mean=4.5, 
+                  cat=factor(c("VertFishScav","Fruit","Omniv","Plant","Invert"), 
+                       levels=c("VertFishScav","Fruit","Omniv","Plant","Invert")),
+                  lab=c('A','AB','AB','BC','C'))
+
+pd <- data.frame(rbind(get_posterior(), get_posterior('b_fruit'),
+            get_posterior('b_omni'), get_posterior('b_plant'),
+            get_posterior('b_invert')))
+pd <- cbind(cat=factor(c("VertFishScav","Fruit","Omniv","Plant","Invert"), 
+                       levels=c("VertFishScav","Fruit","Omniv","Plant","Invert")),
+                       pd)
+
+pd %>%
+  ggplot(aes(x=cat, y=mean)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_text(data=ann, aes(label=lab), size=6) +
+  ylab(expression("log("*N[e]*")"~"± 95% CI")) +
+  xlab("Diet") +
+  mytheme
+
+```
+
+## Migration Status
+
+```{r}
+
+diffs <- sm %>% 
+  filter(param %in% c('b_mig')) %>%
+  select(param,`2.5%`,`97.5%`)
+
+ann <- data.frame(mean=4.5, 
+                  cat=factor(c("Does not migrate","Migrates")),
+                  lab=c('A','B'))
+
+pd <- data.frame(rbind(get_posterior(), get_posterior('b_mig')
+                ))
+pd <- cbind(cat=factor(c("Does not migrate","Migrates")),
+                       pd)
+
+pd %>%
+  ggplot(aes(x=cat, y=mean)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_text(data=ann, aes(label=lab), size=6) +
+  ylab(expression("log("*N[e]*")"~"± 95% CI")) +
+  mytheme +
+  theme(axis.title.x=element_blank())
+
+```
+
+## Mass
+
+Marginally significant relationship
+
+```{r}
+
+intval <- rstan::extract(mod, "grand_mean")$grand_mean
+bvals <- rstan::extract(mod, "b_mass")$b_mass
+
+nsim <- 1000
+mass <- seq(range(dat$mass)[1], range(dat$mass)[2], length.out=nsim)
+mass_sc <- (mass-mean(dat$mass))/sd(dat$mass)
+
+pr <- lower <- upper <- rep(NA,nsim)
+
+for (i in 1:nsim){
+  lp <- intval + bvals*mass_sc[i]
+  pr[i] <- mean(lp); lower[i] <- quantile(lp, 0.025); upper[i] <-  quantile(lp,0.975)
+}
+
+pd <- data.frame(mass=mass, mean=pr, lower=lower, upper=upper)
+
+pd %>%
+  ggplot(aes(x=mass, y=mean)) +
+  geom_ribbon(aes(ymin=lower,ymax=upper), fill='black',alpha=0.3) +
+  geom_line() +
+  ylab(expression("log("*N[e]*")"~"± 95% CI")) +
+  mytheme +
+  xlab("Mass (g)")
+
+```
+
+## Latitude
+
+No relationship
+
+```{r}
+
+intval <- rstan::extract(mod, "grand_mean")$grand_mean
+bvals <- rstan::extract(mod, "b_lat")$b_lat
+
+nsim <- 1000
+mass <- seq(range(dat$mean_lat)[1], range(dat$mean_lat)[2], length.out=nsim)
+mass_sc <- (mass-mean(dat$mean_lat))/sd(dat$mean_lat)
+
+pr <- lower <- upper <- rep(NA,nsim)
+
+for (i in 1:nsim){
+  lp <- intval + bvals*mass_sc[i]
+  pr[i] <- mean(lp); lower[i] <- quantile(lp, 0.025); upper[i] <-  quantile(lp,0.975)
+}
+
+pd <- data.frame(mass=mass, mean=pr, lower=lower, upper=upper)
+
+pd %>%
+  ggplot(aes(x=mass, y=mean)) +
+  geom_ribbon(aes(ymin=lower,ymax=upper), fill='black',alpha=0.3) +
+  geom_line() +
+  ylab(expression("log("*N[e]*")"~"± 95% CI")) +
+  mytheme +
+  xlab("Mean absolute latitude")
+
+```
+
+
+## Habitat Area
+
+No relationship
+
+```{r}
+
+barea <- sm %>%
+  filter(grepl('b_area', param)) %>%
+  mutate(Species = unique(dat$Species))
+
+overall_mn <- sm$mean[sm$param == "ar_mean"] 
+
+barea %>%
+  ggplot(aes(x=Species, y=mean)) +
+  geom_errorbar(aes(ymin=`2.5%`, ymax=`97.5%`), width=0.1) +
+  geom_point() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  ylab("Effect size of habitat area on Ne") +
+  geom_hline(yintercept=0, linetype=2, col='red') +
+  geom_hline(yintercept=overall_mn, linetype=2, col='blue')
+
+ggsave('area_effects_on_individual_species.png')
+```
+
+## Model Fit
+
+`y` and `yrep` should be similar.
+
+
+```{r}
+yreal <- log(dat$ne)
+yrep <- rstan::extract(mod, 'yrep')$yrep
+
+ppc_dens_overlay(yreal, yrep[1:50,])
+
+ppc_stat(yreal, yrep, stat="mean")
+```
+

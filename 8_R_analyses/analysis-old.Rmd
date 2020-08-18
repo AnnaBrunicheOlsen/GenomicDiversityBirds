@@ -1,0 +1,479 @@
+---
+title: "Genomics & Habitat Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+```{r}
+
+library(tidyverse)
+library(readxl)
+
+traits <- read_excel('data2/bird_GD_lifehistory_71species_22022020.xlsx',
+                      sheet='Table S1 lifehistory') %>%
+  rename(Species=Genus_Species) %>%
+  select(Species, threatenedNonthreatened, Diet_5Cat, 
+         adultBodyMassGram, flyingOrNot, litterOrClutchSizeNumber,
+  movementPatterns)
+
+areas <- read_csv('data2/enm_areas_50.csv')
+chng <- read_csv('data2/enm_change_50.csv')
+nesize <- read_csv('data2/ne_size.csv')
+nechng <- read_csv('data2/ne_change.csv')
+
+gen <- read_excel('data2/bird_GD_lifehistory_71species_22022020.xlsx',
+                      sheet='Table S3 GD') %>%
+  select(Species, `heterozygosity_for_autosomes_>10k_bp`)
+
+names(gen) <- c('Species', 'Het')
+
+dat <- data.frame(traits, Het=gen$Het) %>% as_tibble()
+
+dat <- dat %>%
+  #left_join(traits, by='Species') %>%
+  mutate(threatened=ifelse(threatenedNonthreatened=="NT", 0, 1)) %>%
+  mutate(mass = as.numeric(adultBodyMassGram)) %>%
+  mutate(diet = relevel(as.factor(Diet_5Cat), ref='VertFishScav')) %>%
+  mutate(litter = as.numeric(litterOrClutchSizeNumber)) %>%
+  mutate(carn = ifelse(Diet_5Cat=='VertFishScav','Carnivore','Non-carnivore')) %>%
+  mutate(carn=factor(carn, levels=c('Non-carnivore','Carnivore'))) %>%
+  mutate(migrates=ifelse(movementPatterns=='non-migrant',0,1))
+```
+
+## Heterozygosity
+
+I modeled heterozygosity as a function of threatened status, mass, diet , litter size, 
+and migration status.
+
+```{r}
+mod <- lm(log(Het) ~ threatened + scale(mass) + scale(litter) + migrates + 
+          diet, data=dat)
+
+sjPlot::tab_model(mod)
+```
+
+## Effective Population Size
+
+I modeled effective population size as a function of habitat area, mass, diet (carnivore or not), litter size, 
+and flight status.
+I did this in two ways - within each time period (Holocene, glacial max (LGM), last interglacial (LIG), and mid-Pliestocene (MP) across species,
+and across time periods and species.
+
+### Looking Across Species, Within Time Periods
+
+```{r}
+
+
+ne_long <- nesize %>% gather(key='period', value='ne', pliest:earlyholo)
+
+dat3 <- areas %>%
+  mutate(species=dat$Species) %>%
+  gather(key='period', value='area', pliest:present) %>%
+  left_join(ne_long) %>%
+  rename(Species=species) %>%
+  left_join(dat) %>%
+  filter(period != 'present')
+```
+
+
+#### Early Holocene
+```{r}
+
+#eholo
+
+dat3 <- dat3 %>%
+  mutate(carn = ifelse(diet=='VertFishScav', 'Carnivore','Non-carnivore'))
+dat3$carn <- factor(dat3$carn, levels=c('Non-carnivore', 'Carnivore'))
+
+dat_eholo <- dat3 %>% filter(period=='earlyholo')
+
+mod_eh <- lm(log(ne) ~ scale(area) + scale(mass) + flyingOrNot + carn +
+           scale(litter), data=dat_eholo)
+
+sjPlot::tab_model(mod_eh)
+```
+
+#### Last Glacial Max
+```{r}
+
+dat_gm <- dat3 %>% filter(period=='glacialmax')
+
+mod_gm <- lm(log(ne) ~ scale(area) + scale(mass) + flyingOrNot + carn +
+           scale(litter), data=dat_gm)
+
+sjPlot::tab_model(mod_gm)
+```
+
+#### Last Interglacial
+```{r}
+
+#interglacial
+
+dat_ig <- dat3 %>% filter(period=='interglacial')
+
+mod_ig <- lm(log(ne) ~ scale(area) + scale(mass) + flyingOrNot + carn +
+           scale(litter), data=dat_ig)
+
+sjPlot::tab_model(mod_ig)
+```
+
+##### Mid-Pliestocene
+
+```{r}
+
+#pliest
+dat_pl <- dat3 %>% filter(period=='pliest')
+
+mod_pl <- lm(log(ne) ~ scale(area) + scale(mass) + flyingOrNot + carn +
+           scale(litter), data=dat_pl)
+
+sjPlot::tab_model(mod_pl)
+```
+
+##### Effect sizes in each period summarized as figure
+```{r}
+
+#area
+mod_list <- list(mod_pl=mod_pl, mod_ig=mod_ig, mod_gm=mod_gm, mod_eh=mod_eh)
+
+eff_size <- sapply(mod_list, function(x) coef(x)[2])
+
+eff_se <- sapply(mod_list, function(x){
+                   out <- summary(x)
+                   out$coefficients[2,2]
+           })
+upper=eff_size + 1.96* eff_se
+lower=eff_size - 1.96* eff_se
+
+areaplot <- data.frame(per=c('MP', 'LIG', 'LGM',
+                 'Holo'),
+           eff=eff_size, lower=lower, upper=upper) %>%
+  ggplot(aes(x=per, y=eff)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_hline(yintercept=0, linetype=2) +
+  ylab(expression("Effect size of habitat area on N"[e])) +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.text=element_text(size=8),
+        axis.title.x=element_blank(),
+        axis.title=element_text(size=12))
+
+
+eff_size <- sapply(mod_list, function(x) coef(x)[3])
+
+eff_se <- sapply(mod_list, function(x){
+                   out <- summary(x)
+                   out$coefficients[3,2]
+           })
+upper=eff_size + 1.96* eff_se
+lower=eff_size - 1.96* eff_se
+
+massplot <- data.frame(per=c('MP', 'LIG', 'LGM',
+                 'Holo'),
+           eff=eff_size, lower=lower, upper=upper) %>%
+  ggplot(aes(x=per, y=eff)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_hline(yintercept=0, linetype=2) +
+  ylab(expression("Effect size of body mass on N"[e])) +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.text=element_text(size=8),
+        axis.title.x=element_blank(),
+        axis.title=element_text(size=12))
+
+eff_size <- sapply(mod_list, function(x) coef(x)[4])
+
+eff_se <- sapply(mod_list, function(x){
+                   out <- summary(x)
+                   out$coefficients[4,2]
+           })
+upper=eff_size + 1.96* eff_se
+lower=eff_size - 1.96* eff_se
+
+flightplot <- data.frame(per=c('MP', 'LIG', 'LGM',
+                 'Holo'),
+           eff=eff_size, lower=lower, upper=upper) %>%
+  ggplot(aes(x=per, y=eff)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_hline(yintercept=0, linetype=2) +
+  ylab(expression("Effect of no flight ability on N"[e])) +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.text=element_text(size=8),
+        axis.title.x=element_blank(),
+        axis.title=element_text(size=12))
+
+eff_size <- sapply(mod_list, function(x) coef(x)[5])
+
+eff_se <- sapply(mod_list, function(x){
+                   out <- summary(x)
+                   out$coefficients[5,2]
+           })
+upper=eff_size + 1.96* eff_se
+lower=eff_size - 1.96* eff_se
+
+carnplot <- data.frame(per=c('MP', 'LIG', 'LGM',
+                 'Holo'),
+           eff=eff_size, lower=lower, upper=upper) %>%
+  ggplot(aes(x=per, y=eff)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_hline(yintercept=0, linetype=2) +
+  ylab(expression("Effect of carnivore diet on N"[e])) +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.text=element_text(size=8),
+        axis.title.x=element_blank(),
+        axis.title=element_text(size=12))
+
+
+eff_size <- sapply(mod_list, function(x) coef(x)[6])
+
+eff_se <- sapply(mod_list, function(x){
+                   out <- summary(x)
+                   out$coefficients[6,2]
+           })
+upper=eff_size + 1.96* eff_se
+lower=eff_size - 1.96* eff_se
+
+litterplot <- data.frame(per=c('MP', 'LIG', 'LGM',
+                 'Holo'),
+           eff=eff_size, lower=lower, upper=upper) %>%
+  ggplot(aes(x=per, y=eff)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2) +
+  geom_point(size=2) +
+  geom_hline(yintercept=0, linetype=2) +
+  ylab(expression("Effect of litter size on N"[e])) +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.text=element_text(size=8),
+        axis.title.x=element_blank(),
+        axis.title=element_text(size=12))
+
+library(gridExtra)
+grid.arrange(areaplot, massplot, flightplot, carnplot, litterplot, nrow=2)
+```
+
+## Across Species and Time Periods
+
+```{r}
+library(lme4)
+library(lmerTest)
+
+mod3 <- lmer(log(ne) ~ scale(area) + scale(mass) + flyingOrNot + scale(litter) +
+              + carn + (1 + scale(area)|Species), data=dat3)
+
+sjPlot::tab_model(mod3)
+
+
+nd <- data.frame(area = seq(min(dat3$area), max(dat3$area), length.out=100),
+                 mass = mean(dat3$mass, na.rm=T), flyingOrNot='flight',
+                 litter = mean(dat3$litter, na.rm=T), carn='Non-carnivore')
+
+pr <- predict(mod3, newdata=nd, re.form=NA)
+
+#data.frame(nd, predicted=pr) %>%
+#  ggplot(aes(x=area, y=predicted)) +
+#  geom_line()
+```
+
+## Looking at migration for flying-only birds
+
+```{r}
+dat_fly <- dat3 %>% filter(flyingOrNot=='flight') %>%
+  mutate(movementPatterns=factor(movementPatterns, 
+                                 levels=c('non-migrant','altitudinal_migrant','migrant')))
+mod4 <- lmer(log(ne) ~ scale(area) + scale(mass) + movementPatterns + scale(litter) +
+              + carn + (1 + scale(area)|Species), data=dat_fly)
+
+sjPlot::tab_model(mod4)
+
+
+nd <- data.frame(area = seq(min(dat3$area), max(dat3$area), length.out=100),
+                 mass = mean(dat3$mass, na.rm=T), flyingOrNot='flight',
+                 litter = mean(dat3$litter, na.rm=T), carn='Non-carnivore')
+```
+
+## Flight and Migration
+
+Hesitant to use this since flight and migration status are related to each other
+
+```{r}
+
+dat_all <- dat3 %>%
+  mutate(movementPatterns=factor(movementPatterns, 
+                                 levels=c('non-migrant','altitudinal_migrant','migrant'))) %>%
+  drop_na()
+
+mod5 <- lmer(log(ne) ~ scale(area) + scale(mass) + flyingOrNot +
+             movementPatterns + scale(litter) +
+              + carn + (1 + scale(area)|Species), data=dat_all,
+              na.action='na.fail')
+
+sjPlot::tab_model(mod5)
+```
+
+## Model selection
+
+```{r}
+library(MuMIn)
+dr <- dredge(mod5, fixed='scale(area)')
+knitr::kable(dr)
+
+```
+
+Best model:
+
+```{r}
+best_mod <- get.models(dr, 1)[[1]]
+sjPlot::tab_model(best_mod)
+```
+
+
+
+## Another Way of Looking at Area Effect
+
+Uses chi-square/contingency analysis like the bat paper.
+
+A separate analysis is run for three period (PL-LIG, LIG-LGM, LGM-HOLO).
+For each period change in effective population size and change in habitat area is coded as either increasing.
+Then a chi-square test is done for each period to see if there is a relationship between the two.
+
+```{r}
+#pl_igper1 <- 
+dat2 <- nechng %>%
+  mutate(pl_ig_bin = ifelse(pl_ig >= 0, 'Ne: increasing', 'Ne: decreasing'),
+         ig_gm_bin = ifelse(ig_gm >= 0,'Ne: increasing', 'Ne: decreasing'),
+         gm_eh_bin = ifelse(gm_eh >= 0, 'Ne: increasing', 'Ne: decreasing')) %>%
+  rename(Species=species) %>%
+  left_join(dat, by='Species') %>%
+  left_join(chng %>% rename(Species=species) %>%
+            mutate(
+            plig_area_bin=ifelse(pl_ig>=0, 'Area: increasing', 'Area: decreasing'),
+            iggm_area_bin=ifelse(ig_gm>=0, 'Area: increasing','Area: decreasing'),
+            gmeh_area_bin=ifelse(gm_eh>=0, 'Area: increasing','Area: decreasing'))
+            
+            ,by='Species') %>%
+  select(pl_ig_bin, ig_gm_bin, gm_eh_bin, plig_area_bin, iggm_area_bin, gmeh_area_bin, Species)
+```
+
+#### PL-LIG
+```{r}
+
+
+
+table(dat2$pl_ig_bin, dat2$plig_area_bin)
+mosaicplot(table(dat2$pl_ig_bin, dat2$plig_area_bin), color=T)
+
+chisq.test(dat2$pl_ig_bin, dat2$plig_area_bin)
+```
+
+##### LIG-LGM
+
+```{r}
+
+table(dat2$ig_gm_bin, dat2$iggm_area_bin)
+mosaicplot(table(dat2$ig_gm_bin, dat2$iggm_area_bin), color=T)
+
+chisq.test(dat2$ig_gm_bin, dat2$iggm_area_bin)
+```
+
+##### LGM-EHOLO
+
+```{r}
+
+
+table(dat2$gm_eh_bin, dat2$gmeh_area_bin)
+mosaicplot(table(dat2$gm_eh_bin, dat2$gmeh_area_bin), color=T)
+
+chisq.test(dat2$gm_eh_bin, dat2$gmeh_area_bin)
+```
+
+None show any relationship between Ne and habitat area...
+
+## Model Adjustments
+
+Removing flight, adding mean absolute latitude
+
+```{r}
+
+lat <- read_csv('data2/mean_lat.csv') %>%
+  rename(Species=SCINAME) %>%
+  mutate(Species=gsub(" ", "_", Species))
+
+dat_lat <- dat_all %>%
+  left_join(lat, by='Species') %>%
+  mutate(movementPatterns=fct_recode(movementPatterns,
+                                     'migrant'='altitudinal_migrant'))
+  
+
+mod6 <- lmer(log(ne) ~ scale(area) + scale(mass) + scale(mean_lat) +
+             movementPatterns + scale(litter) +
+              + carn + (1 + scale(area)|Species), data=dat_lat)
+
+sjPlot::tab_model(mod6)
+
+```
+
+Subsetting to only Nadachowska species
+
+```{r}
+
+sub_species <- read.table('data2/Nadachowska_species_incl.txt',header=F)$V1
+
+dat_sub <- dat_lat %>%
+  filter(Species %in% sub_species)
+
+mod7 <- lmer(log(ne) ~ scale(area) + scale(mass) + scale(mean_lat) +
+             movementPatterns + scale(litter) +
+              + carn + (1 + scale(area)|Species), data=dat_sub)
+
+sjPlot::tab_model(mod7)
+
+```
+
+Patterns are similar but weaker
+
+Note I had to exclude a number of species (~14?) from full analysis because they were missing trait covariates, might want to go back and look at your traits database and see if any of those missing values can be added in.
+
+## With Threatened Status and Diet as 5 categories
+
+```{r}
+mod8 <- lmer(log(ne) ~ scale(area) + scale(mass) + scale(mean_lat) +
+             movementPatterns + scale(litter) + threatened +
+              + diet + (1 + scale(area)|Species), data=dat_lat)
+
+sjPlot::tab_model(mod8)
+```
+
+
+So what this model is saying is that mass (estimate -0.351, p=0.054) has a marginally significant negative effect on Ne. 
+Movementpatterns-migrant has a positive marginally significant estimate (0.80562, p=0.061) meaning there is some evidence migrants have higher Ne than non-migrants.
+Litter size had a significant positive effect on Ne.
+It gets tricker to interpret the diet coefficients. 
+Basically the way it works is that each category listed in the table is being compared to the reference category (VertFishScav, which I manually set). 
+So dietInvertebrate had significantly higher Ne than VertFishScav, and dietPlantSeed had a marginally significantly higher Ne than VertFishScav, but dietFruiNect was not significantly different from VertFishScav.
+
+We can do the multiple comparisons between each pair of diets but the most straightforward way is to fit a Bayesian model which I can do but probably not before the talk.
+
+Anyway here also is the model without threatened status:
+
+```{r}
+mod9 <- lmer(log(ne) ~ scale(area) + scale(mass) + scale(mean_lat) +
+             movementPatterns + scale(litter) +
+              + diet + (1 + scale(area)|Species), data=dat_lat)
+
+sjPlot::tab_model(mod9)
+
+```
+
