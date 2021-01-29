@@ -19,7 +19,7 @@ calc_areas <- function(maps){
 extract_areas <- function(species){
   maps1 <- readRDS(paste0("data/maps/",species,"_maps.Rds"))
   maps2 <- readRDS(paste0("data/maps/",species,"_pliest_maps.Rds"))
-  
+
   maps1 <- maps1[c("interglacial","glacialmax","earlyholo","present")]
   maps2 <- maps2["pliest"]
   maps <- c(maps2, maps1)
@@ -45,7 +45,7 @@ write.csv(all_chng, "data/enm_change_50.csv", row.names=F)
 #Change in effective pop size
 
 
-interp_value <- function(dat, newval){  
+interp_value <- function(dat, newval){
   b1 <- max(which(newval > dat$time))
   b2 <- min(which(newval <= dat$time))
   xvals <- c(dat$time[b1], dat$time[b2])
@@ -54,6 +54,9 @@ interp_value <- function(dat, newval){
            error=function(e) NA)
 }
 
+allsp <- list.files("data/data/psmc")
+allsp <- gsub(".tar.gz","", allsp, fixed=TRUE)
+
 get_ne <- function(species){
 
   eholo <- mean(c(8.326e3,11.7e3))
@@ -61,14 +64,14 @@ get_ne <- function(species){
   iglacial <- c(130000)
   pliest <- 787000
 
-  times <- c(pliest=pliest, interglacial=iglacial, glacialmax=gmax, 
+  times <- c(pliest=pliest, interglacial=iglacial, glacialmax=gmax,
              earlyholo=eholo)
-  
+
   if(species=='Anser_cygnoid') species <- 'Anser_cygnoides'
   if(species=='Corvus_corone') species <- 'Corvus_cornix'
- 
+
   tmp_dir <- tempdir()
-  zf <- paste0('data/psmc/',species,'.tar.gz')
+  zf <- paste0('data/data/psmc/',species,'.tar.gz')
   untar(zf, exdir=tmp_dir)
 
   if(species=='Apteryx_haastii') species <- 'Apteryx_haasti'
@@ -79,7 +82,7 @@ get_ne <- function(species){
 
   dat <- read.table(paste0(sp_dir, "/", fbase, '0.txt'))[,1:2]
   names(dat) <- c("time", "pop")
-  
+
   sapply(times, function(x) interp_value(dat, x))
 
 }
@@ -88,7 +91,7 @@ all_ne <- pblapply(allsp, get_ne)
 all_ne <- as.data.frame(do.call("rbind", all_ne))
 all_ne <- data.frame(species=allsp, all_ne)
 
-write.csv(all_ne, "data/ne_size.csv", row.names=F)
+write.csv(all_ne, "data/ne_size_new.csv", row.names=F)
 
 pl_ig <- (all_ne$interglacial - all_ne$pliest)/all_ne$pliest
 ig_gm <- (all_ne$glacialmax - all_ne$interglacial)/all_ne$interglacial
@@ -96,4 +99,4 @@ gm_eh <- (all_ne$earlyholo - all_ne$glacialmax)/all_ne$glacialmax
 
 ne_chng <- data.frame(species=allsp, pl_ig=pl_ig, ig_gm=ig_gm, gm_eh=gm_eh)
 
-write.csv(ne_chng, "data/ne_change.csv", row.names=F)
+write.csv(ne_chng, "data/ne_change_new.csv", row.names=F)

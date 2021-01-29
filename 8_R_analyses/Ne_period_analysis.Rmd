@@ -1,0 +1,467 @@
+---
+title: "Genomics & Habitat Analysis"
+output: html_document
+date: December 17, 2020
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+
+```{r}
+
+library(multcomp)
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+
+mytheme <-   theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+  axis.text=element_text(size=16), axis.title=element_text(size=18))
+
+traits <- read_excel('data/bird_GD_lifehistory_71species_19102020.xlsx',
+                      sheet='Table S1 lifehistory') %>%
+  rename(Species=Genus_Species) %>%
+  rename(IUCN = GlobalIUCNRedListCategory) %>%
+  mutate(IUCN = factor(IUCN, levels=c('LC','NT','VU','EN','CR'))) %>% 
+  select(Species, threatenedNonthreatened, Diet_5Cat, 
+         adultBodyMassGram, flyingOrNot, litterOrClutchSizeNumber,
+  movementPatterns,IUCN)
+
+areas <- read_csv('data/enm_areas.csv')
+chng <- read_csv('data/enm_change.csv')
+nesize <- read_csv('data/ne_size_new.csv')
+nechng <- read_csv('data/ne_change_new.csv')
+
+gen <- read_excel('data/bird_GD_lifehistory_71species_19102020.xlsx',
+                      sheet='Table S3 GD') %>%
+  select(Species, heterozygosity)
+
+names(gen) <- c('Species', 'Het')
+
+dat <- data.frame(traits, Het=gen$Het) %>% as_tibble()
+
+dat <- dat %>%
+  #left_join(traits, by='Species') %>%
+  mutate(threatened=ifelse(threatenedNonthreatened=="NT", 0, 1)) %>%
+  mutate(mass = as.numeric(adultBodyMassGram)) %>%
+  mutate(diet = relevel(as.factor(Diet_5Cat), ref='VertFishScav')) %>%
+  mutate(litter = as.numeric(litterOrClutchSizeNumber)) %>%
+  mutate(carn = ifelse(Diet_5Cat=='VertFishScav','Carnivore','Non-carnivore')) %>%
+  mutate(carn=factor(carn, levels=c('Non-carnivore','Carnivore'))) %>%
+  mutate(migrates=ifelse(movementPatterns=='non-migrant',0,1)) %>%
+  mutate(IUCN=fct_recode(IUCN, `EN+CR`="EN",`EN+CR`="CR"))
+
+lat <- read_csv('data/mean_lat.csv') %>%
+  rename(Species=SCINAME) %>%
+  mutate(Species=gsub(" ", "_", Species)) %>%
+  mutate(Species=recode(Species, Anser_cygnoid="Anser_cygnoides"))
+
+dat_lat <- dat %>%
+  mutate(Species = recode(Species, Picoides_pubescens='Dryobates_pubescens')) %>%
+  left_join(lat, by='Species')
+
+areas <- areas %>%
+  mutate(species = recode(species, Anser_cygnoid="Anser_cygnoides"))
+
+dat_lat <- dat_lat %>%
+  mutate(Species = recode(Species, Picoides_pubescens="Dryobates_pubescens")) 
+                          
+dat_het <- dat_lat %>%
+  left_join(areas %>% rename(area=present, Species=species) %>% select(Species,area)) %>%
+  filter(Species != "Apteryx_rowi") %>%
+  filter(Species != "Cuculus_canorus") %>%
+  filter(Species != "Corvus_cornix_AKA_corvus_corone")
+
+```
+
+# Effective Population Size
+
+For each of the three time periods (PL->IG, IG->GM, GM->EH), I took the change in ENM area and effective population size and converted it to a binary variable (0 = decreasing, 1 = increasing during time period).
+
+I then performed a series of logistic regressions, one per time period, looking at how the probability of species effective population size increasing was related to ENM area change (increasing/decreasing), threatened status, mass, diet, and migration status.
+
+### Process data
+
+```{r}
+#Fix some species name mismatches
+nechng$species[nechng$species == "Apteryx_haasti"] <- "Apteryx_haastii"
+nechng$species[nechng$species == "Picoides_pubescens"] <- "Dryobates_pubescens"
+chng$species[chng$species == "Anser_cygnoid"] <- "Anser_cygnoides"
+
+#Identify species with no change in gm_eh period
+no_gmeh_change <- nechng$species[nechng$gm_eh == 0]
+
+dat2 <- nechng %>%
+  mutate(pl_ig_bin = ifelse(pl_ig >= 0, 'Ne: increasing', 'Ne: decreasing'),
+         ig_gm_bin = ifelse(ig_gm >= 0,'Ne: increasing', 'Ne: decreasing'),
+         gm_eh_bin = ifelse(gm_eh >= 0, 'Ne: increasing', 'Ne: decreasing')) %>%
+  rename(Species=species) %>%
+  left_join(dat, by='Species') %>%
+  left_join(chng %>% rename(Species=species) %>%
+            mutate(
+            plig_area_bin=ifelse(pl_ig>=0, 'Area: increasing', 'Area: decreasing'),
+            iggm_area_bin=ifelse(ig_gm>=0, 'Area: increasing','Area: decreasing'),
+            gmeh_area_bin=ifelse(gm_eh>=0, 'Area: increasing','Area: decreasing'))
+            
+            ,by='Species') %>%
+  select(pl_ig_bin, ig_gm_bin, gm_eh_bin, plig_area_bin, iggm_area_bin, gmeh_area_bin, Species)
+
+dat_binary <- dat2 %>%
+  mutate_at(c("pl_ig_bin","ig_gm_bin","gm_eh_bin"), function(x) ifelse(x=="Ne: decreasing", 0, 1)) %>%
+  mutate_at(c("plig_area_bin","iggm_area_bin","gmeh_area_bin"), function(x) ifelse(x=="Area: decreasing", 0, 1))
+
+dat_ne_chng <- dat_binary %>%
+  select(Species, pl_ig_bin, ig_gm_bin, gm_eh_bin) %>%
+  gather(pl_ig_bin:gm_eh_bin, key="period", value="ne_increase") %>%
+  mutate(period=recode(period, pl_ig_bin="PL_IG", ig_gm_bin="IG_GM", gm_eh_bin="GM_EH"))
+
+dat_area_chng <- dat_binary %>%
+  select(Species, plig_area_bin, iggm_area_bin, gmeh_area_bin) %>%
+  gather(plig_area_bin:gmeh_area_bin, key="period", value="area_increase") %>%
+  mutate(period=recode(period, plig_area_bin="PL_IG", iggm_area_bin="IG_GM", gmeh_area_bin="GM_EH"))
+
+covs <- dat_lat %>%
+  group_by(Species, IUCN, mass, diet, migrates) %>%
+  summarize()
+
+full_binary <- dat_ne_chng %>%
+  left_join(dat_area_chng, by=c('Species', 'period')) %>%
+  left_join(covs, by='Species') %>%
+  mutate(IUCN = fct_recode(IUCN, `LC+NT`="LC", `LC+NT`="NT",`VU+EN+CR`="VU",`VU+EN+CR`="EN+CR")) %>%
+  mutate(diet = fct_recode(diet, Other="Invertebrate", Other="FruiNect", Other="Omnivore", Other="PlantSeed")) %>%
+  filter(Species %in% dat_het$Species)
+```
+
+### Pliestocene - Interglacial period (PL-IG)
+
+```{r}
+
+sub_plig <- full_binary %>% filter(period=="PL_IG")
+
+mod_plig <- glm(ne_increase ~ area_increase + scale(log(mass)) + diet + migrates, 
+                data=sub_plig, family='binomial')
+```
+
+### Interglacial - Glacial max (IG-GM)
+
+```{r}
+
+sub_iggm <- full_binary %>% filter(period=="IG_GM")
+
+mod_iggm <- glm(ne_increase ~ area_increase + scale(log(mass)) + diet + migrates, 
+                data=sub_iggm, family='binomial')
+
+```
+
+### Glacial max - Early holo (GM-EH)
+
+```{r}
+#Filter out species with no change
+sub_gmeh <- full_binary %>%
+  filter(period == "GM_EH") %>%
+  filter(! Species %in% no_gmeh_change)
+
+mod_gmeh <- glm(ne_increase ~ area_increase + scale(log(mass)) + diet + migrates, 
+                data=sub_gmeh, family='binomial')
+
+```
+
+### Summary of all models
+
+```{r}
+mod_names <- c("PL->IG","IG->GM","GM->EH")
+sjPlot::tab_model(mod_plig, mod_iggm, mod_gmeh, transform=NULL,
+                 dv.labels=mod_names)
+```
+
+### Summary of Area (lack of...) effect
+
+```{r}
+mod_list <- list(mod_plig, mod_iggm, mod_gmeh)
+names(mod_list) <- mod_names
+
+pr <- lapply(1:3, function(i){
+  raw <- predict(mod_list[[i]],
+                 newdata=data.frame(area_increase=c(0,1),
+                                    IUCN="LC+NT",
+                                    mass=mean(sub_plig$mass, na.rm=T),
+                                    diet="Other",
+                                    migrates=0), se.fit=TRUE)
+  data.frame(prob=plogis(raw$fit), lower=plogis(raw$fit - 1.96*raw$se.fit),
+             upper=plogis(raw$fit + 1.96*raw$se.fit), period=mod_names[i],
+             area_increase=c("dec","inc"))
+})
+pr <- do.call("rbind", pr)
+
+pval <- sapply(mod_list, function(x){
+  coefs <- summary(x)$coefficients
+  coefs["area_increase",4]
+})
+pval <- ifelse(pval < 0.01, "P < 0.01", paste0("P = ", round(pval, 2)))
+pval <- data.frame(label=pval, period=mod_names, area_increase=1.5, prob=max(pr$upper)*1.05)
+pval$period <- factor(pval$period, levels=c("PL->IG","IG->GM","GM->EH"))
+
+pr %>%
+  mutate(period=factor(period, levels=c("PL->IG","IG->GM","GM->EH"))) %>%
+  ggplot(aes(x=area_increase, y=prob)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2, col='chocolate2') +
+  geom_point(size=3, col='chocolate2') +
+  geom_text(data=pval, aes(label=label), size=5) +
+  facet_wrap("period", nrow=1) +
+  labs(x="Change in suitable habitat area", y=expression(Probability~of~italic(N[e])~increase)) +
+  mytheme +
+  theme(strip.background=element_rect("white"), strip.text=element_text(size=16))
+
+ggsave("figures/fig_Ne_area.tiff")
+```
+
+### Summary of Mass effect
+
+```{r}
+pr <- lapply(1:3, function(i){
+  mrng <- range(sub_plig$mass, na.rm=T)
+  mseq <- seq(mrng[1], mrng[2], length.out=100)
+  raw <- predict(mod_list[[i]],
+                 newdata=data.frame(area_increase=0,
+                                    IUCN="LC+NT",
+                                    mass=mseq,
+                                    diet="Other",
+                                    migrates=0), se.fit=TRUE)
+  data.frame(prob=plogis(raw$fit), lower=plogis(raw$fit - 1.96*raw$se.fit),
+             upper=plogis(raw$fit + 1.96*raw$se.fit), period=mod_names[i],
+             mass=mseq, se.fit=TRUE)
+})
+pr <- do.call("rbind", pr)
+
+pval <- sapply(mod_list, function(x){
+  coefs <- summary(x)$coefficients
+  coefs["scale(log(mass))",4]
+})
+
+mrng <- range(sub_plig$mass, na.rm=T)
+mseq <- seq(mrng[1], mrng[2], length.out=100)
+lmseq <- log(mseq)
+mid <- exp(median(lmseq))
+
+pval <- ifelse(pval < 0.01, "P < 0.01", paste0("P = ", round(pval, 2)))
+pval <- data.frame(label=pval, period=mod_names, mass=exp(6.8), prob=max(pr$upper)*1.05)
+pval$period <- factor(pval$period, levels=c("PL->IG","IG->GM","GM->EH"))
+
+pr %>%
+  mutate(period=factor(period, levels=c("PL->IG","IG->GM","GM->EH"))) %>%
+  ggplot(aes(x=log(mass), y=prob)) +
+  geom_ribbon(aes(ymin=lower,ymax=upper), alpha=0.3, fill='chocolate2') +
+  geom_line(col='chocolate2') +
+  geom_text(data=pval, aes(label=label), size=5) +
+  facet_wrap("period", nrow=1) +
+  labs(x="log(Body mass)", y=expression(Probability~of~italic(N[e])~increase)) +
+  mytheme +
+  theme(strip.background=element_rect("white"), strip.text=element_text(size=16))
+
+ggsave("figures/fig_Ne_mass.tiff")
+```
+
+### Summary of Diet Effect
+
+```{r}
+pr <- lapply(1:3, function(i){
+  raw <- predict(mod_list[[i]],
+                 newdata=data.frame(area_increase=0,
+                                    IUCN="LC+NT",
+                                    mass=mean(sub_plig$mass, na.rm=T),
+                                    diet=c("VertFishScav","Other"),
+                                    migrates=0), se.fit=TRUE)
+  data.frame(prob=plogis(raw$fit), lower=plogis(raw$fit - 1.96*raw$se.fit),
+             upper=plogis(raw$fit + 1.96*raw$se.fit), period=mod_names[i],
+             diet=c("VertFishScav","Other"), se.fit=TRUE)
+})
+pr <- do.call("rbind", pr)
+
+pval <- sapply(mod_list, function(x){
+  coefs <- summary(x)$coefficients
+  coefs["dietOther",4]
+})
+pval <- ifelse(pval < 0.01, "P < 0.01", paste0("P = ", round(pval, 2)))
+pval <- data.frame(label=pval, period=mod_names, diet=1.5, prob=max(pr$upper)*1.05)
+pval$period <- factor(pval$period, levels=c("PL->IG","IG->GM","GM->EH"))
+
+pr %>%
+  mutate(period=factor(period, levels=c("PL->IG","IG->GM","GM->EH"))) %>%
+  ggplot(aes(x=diet, y=prob)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2, col='chocolate2') +
+  geom_point(size=3, col='chocolate2') +
+  geom_text(data=pval, aes(label=label), size=5) +
+  facet_wrap("period", nrow=1) +
+  labs(x="Diet", y=expression(Probability~of~italic(N[e])~increase)) +
+  mytheme +
+  theme(strip.background=element_rect("white"), strip.text=element_text(size=16))
+
+ggsave("figures/fig_Ne_diet.tiff", width=8.5)
+```
+
+### Summary of Migration Effect
+
+```{r}
+pr <- lapply(1:3, function(i){
+  raw <- predict(mod_list[[i]],
+                 newdata=data.frame(area_increase=0,
+                                    IUCN="LC+NT",
+                                    mass=mean(sub_plig$mass, na.rm=T),
+                                    diet="Other",
+                                    migrates=c(0,1)), se.fit=TRUE)
+  data.frame(prob=plogis(raw$fit), lower=plogis(raw$fit - 1.96*raw$se.fit),
+             upper=plogis(raw$fit + 1.96*raw$se.fit), period=mod_names[i],
+             migrates=c("No","Yes"), se.fit=TRUE)
+})
+pr <- do.call("rbind", pr)
+
+pval <- sapply(mod_list, function(x){
+  coefs <- summary(x)$coefficients
+  coefs["migrates",4]
+})
+pval <- ifelse(pval < 0.01, "P < 0.01", paste0("P = ", round(pval, 2)))
+pval <- data.frame(label=pval, period=mod_names, migrates=1.5, prob=max(pr$upper)*1.05)
+pval$period <- factor(pval$period, levels=c("PL->IG","IG->GM","GM->EH"))
+
+pr %>%
+  mutate(period=factor(period, levels=c("PL->IG","IG->GM","GM->EH"))) %>%
+  ggplot(aes(x=migrates, y=prob)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2, col='chocolate2') +
+  geom_point(size=3, col='chocolate2') +
+  geom_text(data=pval, aes(label=label), size=5) +
+  facet_wrap("period", nrow=1) +
+  labs(x="Migrates", y=expression(Probability~of~italic(N[e])~increase)) +
+  mytheme +
+  theme(strip.background=element_rect("white"), strip.text=element_text(size=16))
+
+ggsave("figures/fig_Ne_migrate.tiff")
+```
+
+Figure 1
+
+```{r}
+
+library(cowplot)
+
+ne_max <- read_csv("data/ne_max.csv")
+
+nesize_plot_data <- nesize %>%
+  filter(species != "Apteryx_rowi") %>%
+  filter(species != "Cuculus_canorus") %>%
+  filter(species != "Corvus_cornix") %>%
+  gather(key=period, value=Ne, pliest:earlyholo) %>%
+  mutate(period=fct_recode(period, MIS19="pliest", LIG="interglacial", LGM="glacialmax", EH="earlyholo")) %>%
+  left_join(ne_max) %>%
+  mutate(Ne_norm = Ne/max)
+
+nesize_plot_data$period <- factor(as.character(nesize_plot_data$period),
+                                  levels=c("MIS19","LIG","LGM","EH"))
+
+
+nesize_plot <- nesize_plot_data %>%
+  #filter(Ne<300) %>%
+  ggplot(aes(y=Ne_norm, x=period)) +
+  geom_boxplot(fill='chocolate2') +
+  theme_classic(base_size=14) +
+  annotate("text", x=0.7, y=1.08, label="A", size=7) +
+  labs(y=expression(Normalized~italic(N[e])), x="Period") +
+  ylim(c(0,1.08))
+nesize_plot
+
+area_plot_data <- areas %>%
+  dplyr::select(-present) %>%
+  filter(species != "Apteryx_rowi") %>%
+  filter(species != "Cuculus_canorus") %>%
+  filter(species != "Corvus_corone")
+
+area_max <- data.frame(species=area_plot_data$species,
+                       area_max=apply(area_plot_data[,2:5], 1, max, na.rm=T))
+
+area_plot_data <- area_plot_data %>%
+  gather(key=period, value=area, pliest:earlyholo) %>%
+  mutate(period=fct_recode(period, MIS19="pliest", LIG="interglacial", LGM="glacialmax", EH="earlyholo")) %>%
+  left_join(area_max) %>%
+  mutate(area_norm = area/area_max)
+
+area_plot_data$period <- factor(as.character(area_plot_data$period),
+                                  levels=c("MIS19","LIG","LGM","EH"))
+
+area_plot <- area_plot_data %>%
+  #filter(Ne<300) %>%
+  ggplot(aes(y=area_norm, x=period)) +
+  geom_boxplot(fill='chocolate2') +
+  theme_classic(base_size=14) +
+  annotate("text", x=0.7, y=1.08, label="B", size=7) +
+  labs(y="Normalized habitat area", x="Period") +
+  ylim(c(0,1.08))
+area_plot
+
+plot_grid(nesize_plot, area_plot, rows=2)
+
+
+ne_bin_data <- full_binary %>%
+  filter(! (period == "GM_EH" & Species %in% no_gmeh_change) ) %>%
+  group_by(period) %>%
+  summarize(n=length(na.omit(ne_increase)),
+            pct_inc=mean(ne_increase,na.rm=T),
+            pct_dec=mean(1-ne_increase,na.rm=T)) %>%
+  mutate(se=sqrt(pct_inc*pct_dec/n)) %>%
+  gather(key=direct, value=prop, pct_inc:pct_dec) %>%
+  mutate(direct=fct_recode(direct, Increasing='pct_inc', Decreasing='pct_dec')) %>%
+  mutate(period=fct_recode(period, `LGM➔EH`="GM_EH", `LIG➔LGM`="IG_GM", `MIS19➔LIG`="PL_IG"))
+
+ne_bin_data$period <- factor(as.character(ne_bin_data$period),
+                             levels=c("MIS19➔LIG","LIG➔LGM","LGM➔EH"))
+
+ne_bin_data <- ne_bin_data %>%
+  mutate(lower=prop - 1.96*se, upper=prop + 1.96*se)
+
+nebin_plot <- ne_bin_data %>%
+  filter(direct=='Increasing') %>%
+  ggplot(aes(x=period, y=prop)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2, col='chocolate2') +
+  geom_point(size=3, col='chocolate2') +
+  theme_classic(base_size=14) +
+  annotate("text", x=0.6, y=0.8, label="C", size=7) +
+  labs(y=expression(Prop~increasing~italic(N[e])), x="Period")
+
+nebin_plot
+
+#### area
+area_bin_data <- full_binary %>%
+  filter(! (period == "GM_EH" & Species %in% no_gmeh_change) ) %>%
+  group_by(period) %>%
+  summarize(n=length(na.omit(area_increase)),
+            pct_inc=mean(area_increase,na.rm=T),
+            pct_dec=mean(1-area_increase,na.rm=T)) %>%
+  mutate(se=sqrt(pct_inc*pct_dec/n)) %>%
+  gather(key=direct, value=prop, pct_inc:pct_dec) %>%
+  mutate(direct=fct_recode(direct, Increasing='pct_inc', Decreasing='pct_dec')) %>%
+  mutate(period=fct_recode(period, `LGM➔EH`="GM_EH", `LIG➔LGM`="IG_GM", `MIS19➔LIG`="PL_IG"))
+
+area_bin_data$period <- factor(as.character(area_bin_data$period),
+                             levels=c("MIS19➔LIG","LIG➔LGM","LGM➔EH"))
+
+
+area_bin_data <- area_bin_data %>%
+  mutate(lower=prop - 1.96*se, upper=prop + 1.96*se)
+
+areabin_plot <- area_bin_data %>%
+  filter(direct=='Increasing') %>%
+  ggplot(aes(x=period, y=prop)) +
+  geom_errorbar(aes(ymin=lower,ymax=upper), width=0.2, col='chocolate2') +
+  geom_point(size=3, col='chocolate2') +
+  theme_classic(base_size=14) +
+  annotate("text", x=0.6, y=0.8, label="D", size=7) +
+  labs(y="Prop increasing habitat", x="Period")
+
+areabin_plot
+
+
+plot_grid(nesize_plot, nebin_plot, area_plot, areabin_plot, rows=2)
+
+ggsave("figure1.tiff", compression='lzw')
+
+```
+
