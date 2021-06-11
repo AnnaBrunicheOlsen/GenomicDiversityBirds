@@ -1,6 +1,5 @@
-# Runs-of-homozygosity-in-birds
+# bird paper
 These scripts are developed for a project investigating demographich trajectories and habitat reconstruction in birds.
 
-March 2019
+March 2021
 
-Author: Anna Brüniche-Olsen and Kenneth F. Kellner
