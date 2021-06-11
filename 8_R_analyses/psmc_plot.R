@@ -1,25 +1,26 @@
 library(ggplot2)
 
 get_plot_data <- function(file){
-  tab <- read.table(file)  
-  w <- which.max(cummax(tab$V2 != tab$V2[1])) - 1  
+  tab <- read.table(file)
+  w <- which.max(cummax(tab$V2 != tab$V2[1])) - 1
   tab_cut <- tab[w:nrow(tab),1:2]
   names(tab_cut) <- c("time", "pop")
   tab_cut
 }
 
 psmc_plot <- function(zipped){
-  
+
   sp <- gsub(".zip", "", zipped)
   tmp_dir <- tempdir()
   unzip(zipped, exdir=tmp_dir)
   sp_dir <- paste0(tmp_dir,'/',sp)
-  
+
   fbase <- paste0(sp_dir, "/", sp, ".psmc.")
-  
+
   dat <- get_plot_data(paste0(fbase, '0.txt'))
 
-  bs_files <- paste0(fbase, 1:100, '.txt')
+  bs_files <- paste0(fbase, 1:30, '.txt')
+  stopifnot(length(bs_files)==30)
   bs <- lapply(bs_files, get_plot_data)
 
   out <- ggplot(data=dat, aes(x=time, y=pop)) +

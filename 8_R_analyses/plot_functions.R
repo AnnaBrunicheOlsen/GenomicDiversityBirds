@@ -22,8 +22,8 @@ plot_map <- function(pred, title=NULL, legend="none", use_mask=NULL,
   if(!is.null(use_mask)){
     pred <- mask(pred, use_mask)
   }
-  cell_areas <- getValues(area(pred))
-  keep <- getValues(pred)>=0.36 #medium and high
+  cell_areas <- raster::getValues(area(pred))
+  keep <- raster::getValues(pred)>=0.36 #medium and high
   tot_area <- sum(cell_areas[keep], na.rm=TRUE)
 
   tot_area <- formatC(tot_area, format = "e", digits = 2)
@@ -88,6 +88,7 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
   sp_dir <- paste0(tmp_dir,'/',sp)
 
   nboots <- length(list.files(sp_dir, pattern=".txt"))-1
+  stopifnot(nboots >= 30)
 
   template <- list.files(sp_dir, pattern="\\.0\\.txt$")
   fbase <- gsub("0.txt", "", template)
@@ -96,7 +97,7 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
 
   pop_max <- max(dat$pop)
 
-  bs_files <- paste0(sp_dir, "/", fbase, 1:nboots, '.txt')
+  bs_files <- paste0(sp_dir, "/", fbase, 1:30, '.txt')
   bs <- lapply(bs_files, get_plot_data)
 
   bs <- lapply(bs, function(x){
@@ -130,12 +131,12 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
           axis.title=element_text(size=12),
           axis.text=element_text(size=12),
           plot.title = element_text(hjust = 0.5, size=14)) +
-    geom_rect(xmin=log10(eholo[1]),xmax=log10(eholo[2]),ymin=-Inf,ymax=Inf,
-              fill=cols[1], alpha=0.2) +
-    geom_vline(xintercept=gmax, col=cols[2], size=2) +
-    geom_rect(xmin=log10(iglacial[1]),xmax=log10(iglacial[2]),ymin=-Inf,ymax=Inf,
-              fill=cols[3], alpha=0.2) +
-    geom_vline(xintercept=pliest, col=cols[4], size=2) +
+    geom_rect(data=dat[1,],xmin=log10(eholo[1]),xmax=log10(eholo[2]),ymin=-Inf,ymax=Inf,
+              fill=cols[1], alpha=0.3) +
+    geom_vline(xintercept=gmax, col=cols[2], size=2, alpha=0.3) +
+    geom_rect(data=dat[1,],xmin=log10(iglacial[1]),xmax=log10(iglacial[2]),ymin=-Inf,ymax=Inf,
+              fill=cols[3], alpha=0.3) +
+    geom_vline(xintercept=pliest, col=cols[4], size=2, alpha=0.3) +
     scale_x_log10("Time since present (years)",
         breaks = scales::trans_breaks("log10", function(x) 10^x),
         limits=c(x_min,x_max),
