@@ -267,17 +267,20 @@ make_plot('Nipponia_nippon')
 pl2 <- make_plot2('Buceros_rhinoceros', yaxis=FALSE) +
   theme(plot.margin=unit(c(0,0.2,0,0),"cm"))
 
-pl1 <- make_plot2('Cariama_cristata', yvjust=7) +
+#pl1 <- make_plot2('Cariama_cristata', yvjust=7) +
+#  theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
+
+pl1 <- make_plot2('Corvus_brachyrhynchos', yvjust=7) +
   theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
 
 #make_plot('Haliaeetus_albicilla')
 
 plot_grid(pl1, pl2, rel_widths=c(1,0.85)) + draw_plot(legend, -0.44, -0.3) +
-  draw_image("drawings/cariama_cristata.png", 0.14, 0.38, width=0.15) +
+  draw_image("drawings/corvus_brachyrhynchos.png", 0.14, 0.38, width=0.15) +
   draw_image("drawings/buceros_rhinoceros.png", 0.58, 0.39, width=0.15) +
   draw_text("Time since present (years)", 0.55,0.40, size=12)
 
-ggsave("figure_maps.tiff", compression='lzw', dpi=300, width=8, height=4.5)
+ggsave("figure_maps_new.tiff", compression='lzw', dpi=300, width=8, height=4.5)
 
 
 

@@ -13,14 +13,14 @@ library(rnaturalearthdata)
 
 #BirdLife Distributions
 cat('Loading BirdLife distributions\n')
-bd_dist <- readRDS('data/bird_dists.Rds')
+bd_dist <- readRDS('data2/bird_dists.Rds')
 
 #Covariate maps
 cat('Loading bioclim covariate maps\n')
 map_list <- lapply(list(
                         interglacial=paste0('data/lig/bio_',1:19,'.tif'),
                         glacialmax=paste0('data/ccl/cclgmbi',1:19,'.tif'),
-                        earlyholo=paste0('data/eh25/bio_',1:19,'.tif'),         
+                        earlyholo=paste0('data/eh25/bio_',1:19,'.tif'),
                         proj70_rcp4.5=paste0('data/cc45/cc45bi70',1:19,'.tif')),
                    function(files) stack(lapply(files, raster)))
 
@@ -43,14 +43,14 @@ plot_occ <- function(occ, sp){
 }
 
 get_occ <- function(species, ignore_bl=FALSE){
-  fname <- paste0('data/points/',species,'_points.Rds')
+  fname <- paste0('data2/points/',species,'_points.Rds')
   if(file.exists(fname)){
     cat("Loading saved occurrence data\n")
     return(readRDS(fname))
   }
 
   species <- gsub('_', ' ', species)
-  
+
   lat_lim <- '-90,90'
   lng_lim <- '-180,180'
   if(!ignore_bl){
@@ -73,7 +73,7 @@ get_occ <- function(species, ignore_bl=FALSE){
                               limit=0)$meta$count
 
   npoints <- min(10000, avail_points)
-  
+
   nbatches <- floor(npoints / 300)
   left <- npoints %% 300
   if(left > 0) nbatches <- nbatches + 1
@@ -92,12 +92,12 @@ get_occ <- function(species, ignore_bl=FALSE){
   })
 
   out <- do.call("rbind", out) %>% drop_na()
-  
+
   cat("Cleaning occurrence data\n")
   out <- out[!duplicated(out[,3:4]),]
   out <- suppressWarnings(st_as_sf(out, coords=c("decimalLongitude", "decimalLatitude"),
                   crs=st_crs("+proj=longlat +datum=WGS84"), remove=FALSE))
- 
+
   if(!ignore_bl){
     out <- suppressWarnings(suppressMessages(st_intersection(out, bd_sub)))
   }
@@ -115,7 +115,7 @@ get_sp <- function(occs){
 }
 
 get_buffer <- function(occs){
-  data_sp <- get_sp(occs) 
+  data_sp <- get_sp(occs)
   bb <- bbox(data_sp)
   extent(bb[1]-10, bb[3]+10, bb[2]-10, bb[4]+10)
 }
@@ -134,7 +134,7 @@ get_covs <- function(occs, wc){
 }
 
 fit_models <- function(occs, covs, sp, pliest=FALSE){
-  
+
   fn <- paste0('data/models/',sp,'_models.Rds')
   if(pliest) fn <- paste0('data/models/',sp,'_pliest_models.Rds')
   if(file.exists(fn)){
@@ -142,21 +142,21 @@ fit_models <- function(occs, covs, sp, pliest=FALSE){
     return(readRDS(fn))
   }
 
-  occs <- occs[,c('decimalLongitude','decimalLatitude')] 
-  rcovs <- covs$map 
+  occs <- occs[,c('decimalLongitude','decimalLatitude')]
+  rcovs <- covs$map
 
   #Background points
   bg <- randomPoints(rcovs[[1]], n=10000)
   bg <- as.data.frame(bg)
 
-  out <- ENMevaluate(occs, rcovs, bg, 
-                #method='checkerboard2', 
+  out <- ENMevaluate(occs, rcovs, bg,
+                #method='checkerboard2',
                 method='randomkfold',
                 kfolds=4,
-                RMvalues=c(1,2,5), 
+                RMvalues=c(1,2,5),
                 fc=c('L','LQ','LQP'#,'LQPT'
                      #,'LQPTH'
-                     ), 
+                     ),
                 algorithm='maxnet')
   saveRDS(out, fn)
   out
@@ -183,7 +183,7 @@ get_scores <- function(new_stack, covs){
 }
 
 predict_maps <- function(mod, occs, covs, map_list, sp, pliest=FALSE){
-  
+
   fn <- paste0('data/maps/',sp,'_maps.Rds')
   if(pliest) fn <- paste0('data/maps/',sp,'_pliest_maps.Rds')
   if(file.exists(fn)){

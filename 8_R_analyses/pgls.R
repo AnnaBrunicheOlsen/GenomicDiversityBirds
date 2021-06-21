@@ -1,141 +1,131 @@
----
-title: "Genomics & Habitat Analysis"
-output: html_document
-date: January 25 2021
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
-```
-
-```{r}
 library(multcomp)
 library(tidyverse)
 library(readxl)
 library(ggplot2)
 library(cowplot)
+library(ape)
+library(nlme)
+library(rr2)
 
-allsp <- list.files("data/data/psmc")
-allsp <- gsub(".tar.gz","", allsp, fixed=TRUE)
-
-get_ne <- function(species){
-  tmp_dir <- tempdir()
-  zf <- paste0('data/data/psmc/',species,'.tar.gz')
-  untar(zf, exdir=tmp_dir)
-
-  if(species=='Apteryx_haastii') species <- 'Apteryx_haasti'
-  if(species=='Dryobates_pubescens') species <- 'Picoides_pubescens'
-  sp_dir <- paste0(tmp_dir,'/',species)
-  template <- list.files(sp_dir, pattern="\\.0\\.txt$")
-  fbase <- gsub("0.txt", "", template)
-
-  dat <- read.table(paste0(sp_dir, "/", fbase, '0.txt'))[,1:2]
-  names(dat) <- c("time", "pop")
-  dat$keep <- TRUE
-  dat$keep[1:4] <- FALSE
-  dat$species <- species
-
-  mean_Ne <- mean(dat$pop[dat$keep], na.rm=T)
-  var_Ne <- var(dat$pop[dat$keep], na.rm=T)
-
-  return(list(data=dat, mean_Ne=mean_Ne, var_Ne=var_Ne))
+model.matrix.gls <- function(object, ...) {
+    model.matrix(terms(object), data = getData(object), ...)
+}
+model.frame.gls <- function(object, ...) {
+    model.frame(formula(object), data = getData(object), ...)
+}
+terms.gls <- function(object, ...) {
+    terms(model.frame(object), ...)
 }
 
-all_ne <- lapply(allsp, get_ne)
+dat_all <- read.csv("data/dat_all.csv")
+bird_tree <- read.tree('data/data/species.nwk')
 
-all_mean <- lapply(all_ne, function(x) data.frame(species=x$data$species[1], mean_Ne=x$mean_Ne, var_Ne=x$var_Ne))
-all_mean <- do.call(rbind, all_mean) %>%
-  rename(Species=species)
+dat_all$species_adjust <- dat_all$Species
+dat_all$species_adjust[dat_all$Species=="Dryobates_pubescens"] <-
+  "Picoides_pubescens"
+dat_all$species_adjust[dat_all$Species=="Antrostomus_carolinensis"] <-
+  "Caprimulgus_carolinensis"
+dat_all$species_adjust[dat_all$Species=="Cyanoderma_ruficeps"] <-
+  "Stachyris_ruficeps"
+dat_all$species_adjust[dat_all$Species=="Bubo_blakistoni"] <-
+  "Bubo_bubo"
+dat_all$species_adjust[dat_all$Species=="Crypturellus_cinnamomeus"] <-
+  "Crypturellus_undulatus"
+dat_all$species_adjust[dat_all$Species=="Scolopax_mira"] <-
+  "Scolopax_minor"
+dat_all$species_adjust[dat_all$Species=="Tinamus_guttatus"] <-
+  "Eudromia_elegans"
 
-all_mean$Species[all_mean$Species == "Apteryx_haasti"] <- "Apteryx_haastii"
-all_mean$Species[all_mean$Species == "Picoides_pubescens"] <- "Dryobates_pubescens"
+dat_all <- dat_all %>%
+  mutate(IUCN = fct_recode(IUCN, ENCR="EN+CR"))
 
-traits <- read_excel('data/bird_GD_lifehistory_71species_19102020.xlsx',
-                      sheet='Table S1 lifehistory') %>%
-  rename(Species=Genus_Species) %>%
-  rename(IUCN = GlobalIUCNRedListCategory) %>%
-  mutate(IUCN = factor(IUCN, levels=c('LC','NT','VU','EN','CR'))) %>%
-  select(Species, threatenedNonthreatened, Diet_5Cat,
-         adultBodyMassGram, flyingOrNot, litterOrClutchSizeNumber,
-  movementPatterns,IUCN)
+dat_all$diet <- factor(dat_all$diet, levels=c("VertFishScav","FruiNect",
+                                              "Invertebrate","Omnivore",
+                                              "PlantSeed"))
+dat_all$IUCN <- factor(dat_all$IUCN, levels=c("LC","NT","VU","ENCR"))
 
-
-gen <- read_excel('data/bird_GD_lifehistory_71species_19102020.xlsx',
-                      sheet='Table S3 GD') %>%
-  select(Species, heterozygosity)
-
-names(gen) <- c('Species', 'Het')
-
-dat <- data.frame(traits, Het=gen$Het) %>% as_tibble()
-
-dat <- dat %>%
-  #left_join(traits, by='Species') %>%
-  mutate(threatened=ifelse(threatenedNonthreatened=="NT", 0, 1)) %>%
-  mutate(mass = as.numeric(adultBodyMassGram)) %>%
-  mutate(diet = relevel(as.factor(Diet_5Cat), ref='VertFishScav')) %>%
-  mutate(litter = as.numeric(litterOrClutchSizeNumber)) %>%
-  mutate(carn = ifelse(Diet_5Cat=='VertFishScav','Carnivore','Non-carnivore')) %>%
-  mutate(carn=factor(carn, levels=c('Non-carnivore','Carnivore'))) %>%
-  mutate(migrates=ifelse(movementPatterns=='non-migrant',0,1)) %>%
-  mutate(IUCN=fct_recode(IUCN, `EN+CR`="EN",`EN+CR`="CR")) %>%
-  mutate(Species = recode(Species, Picoides_pubescens='Dryobates_pubescens'))
+dat_all$sc_log_mass <- scale(log(dat_all$mass))
 
 
-areas <- read_csv('data/enm_areas.csv')
+# Sample sizes
 
-areas_bl <- read_csv('data/birdlife_areas.csv') %>%
-  mutate(Species=gsub(" ", "_", SCINAME)) %>%
-  rename(bl_area=total_area)
+sp <- dat_all$Species
+sp[4] <- 'Anser_cygnoid'
 
-areas <- areas %>%
-  mutate(species = recode(species, Anser_cygnoid="Anser_cygnoides")) %>%
-  mutate(past_area_mean = c(pliest+interglacial+glacialmax+earlyholo)/4)
+pnts <- rep(NA, length(sp))
 
-areas_var <- apply(areas[,c("pliest","interglacial","glacialmax","earlyholo")],1,var,na.rm=T)
-areas$past_area_var <- areas_var
+for (i in 1:length(sp)){
 
-dat <- dat %>%
-  left_join(areas %>% rename(Species=species)) %>%
-  left_join(areas_bl) %>%
-  filter(Species != "Apteryx_rowi") %>%
-  filter(Species != "Cuculus_canorus") %>%
-  filter(Species != "Corvus_cornix_AKA_corvus_corone")
+  fname <- paste0("/mnt/media/bird_enm/points/",sp[i],"_points.Rds")
 
-dat_all <- dat %>%
-  left_join(all_mean)
-
-write.csv(dat_all, "data/dat_all.csv", row.names=FALSE)
-
-sp_names <- gsub("_"," ",dat_all$Species)
-sp_names <- data.frame(species=sp_names)
-write.table(sp_names, 'species.txt', row.names=FALSE)
-#sp_names <- paste(sp_names, collapse=",")
-
-mean(dat_all$threatenedNonthreatened[log(dat_all$Het)< -7]=="TR")
+  if(file.exists(fname)){
+  inp <- readRDS(fname)
+  pnts[i] <- nrow(inp)
+  }
+}
 
 
-```
 
-# Combined Table
 
-```{r}
+#############
+
+
 dat_het <- dat_all %>%
   rename(area=present)
-mod <- lm(log(Het) ~ IUCN + scale(log(mass)) + diet +
-          scale(log(area)), data=dat_het)
+
+dat_het$sc_log_area <- scale(log(dat_het$area))
+
+mod <- gls(log(Het) ~ IUCN + sc_log_mass + diet + sc_log_area,
+           data=dat_het,
+           correlation=corPagel(1,bird_tree, form=~species_adjust))
+
+dat_het_sub <- dat_het %>%
+  filter(!species_adjust %in% sp[pnts < 100])
+
+mod_ss <- gls(log(Het) ~ IUCN + sc_log_mass + diet + sc_log_area,
+           data=dat_het_sub,
+           correlation=corPagel(1,bird_tree, form=~species_adjust))
+
+
+
 #sjPlot::tab_model(mod)
 
+R2(mod)
+
+############
 dat_ne <- dat_all %>%
   rename(area=past_area_mean)
-mod_ne <- lm(log(mean_Ne) ~ IUCN + scale(log(mass)) + diet +
-          scale(log(area)), data=dat_ne)
-#sjPlot::tab_model(mod_ne)
-sjPlot::tab_model(mod, mod_ne)
-```
 
-# Mass
+dat_ne$sc_log_area <- scale(log(dat_ne$area))
 
-```{r}
+mod_ne <- gls(log(mean_Ne) ~ IUCN + sc_log_mass + diet + sc_log_area,
+           data=dat_ne,
+           correlation=corPagel(1,bird_tree, form=~species_adjust))
+
+summary(mod_ne)
+R2(mod_ne)
+
+######
+
+dat_ne$cv_Ne <- sqrt(dat_ne$var_Ne)/dat_ne$mean_Ne
+
+mod_ne_cv <- gls(log(cv_Ne) ~ IUCN + sc_log_mass + diet + sc_log_area,
+           data=dat_ne,
+           correlation=corPagel(1,bird_tree, form=~species_adjust))
+summary(mod_ne_cv)
+
+dat_ne$sc_log_areacv <- scale(log(sqrt(dat_ne$past_area_var)/dat_ne$area))
+
+mod_ne_habcv <- gls(log(mean_Ne) ~ IUCN + sc_log_mass + diet + sc_log_areacv,
+           data=dat_ne,
+           correlation=corPagel(1,bird_tree, form=~species_adjust))
+summary(mod_ne_habcv)
+
+mod_ne_bothcv <- gls(log(cv_Ne) ~ IUCN + sc_log_mass + diet + sc_log_areacv,
+           data=dat_ne,
+           correlation=corPagel(1,bird_tree, form=~species_adjust))
+summary(mod_ne_bothcv)
+
 
 low_mass <- dat_het$Species[1]
 low_mass_draw <- paste0("drawings/",tolower(low_mass),".png")
@@ -146,28 +136,32 @@ high_mass_draw <- paste0("drawings/",tolower(high_mass),".png")
 pelican <- paste0("drawings/","pelecanus_crispus.png")
 calypte <- paste0("drawings/","calypte_anna.png")
 
-s <- summary(mod)$coefficients
+s <- summary(mod)$tTable
 p <- s[,4]
 
-df_temp <- data.frame(threatened=0, mass=mean(dat_het$mass, na.rm=TRUE), migrates=0,
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_het$diet)),
-                      area=mean(dat_het$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
 mass_sc <- dat_het$mass#scale(dat_het$mass)
 mass_seq <- seq(range(mass_sc)[1],range(mass_sc)[2], length.out=1000)
 
-actual_seq <- seq(range(dat_het$mass)[1], range(dat_het$mass)[2], length.out=1000)
+actual_seq <- mass_seq
+
+mass_seq_sc <- (log(mass_seq) - attr(dat_het$sc_log_mass, "scaled:center"))/
+  attr(dat_het$sc_log_mass, "scaled:scale")
 
 nd <- df_temp
 nd <- nd[rep(1,1000),]
-nd$mass <- mass_seq
-pr <- predict(mod, newdata=nd, se.fit=T)
+nd$sc_log_mass <- mass_seq_sc
+pr <- predict(mod, newdata=nd, se.fit=TRUE)
 
 mytheme <-   theme_bw() +
   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
   axis.text=element_text(size=16), axis.title=element_text(size=18))
 
-pval <- p["scale(log(mass))"]
+pval <- p["sc_log_mass"]
 if(pval < 0.01){
   pval <- paste0("P < 0.01")
 } else {
@@ -187,31 +181,31 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
   theme(axis.title.x=element_blank(),
         plot.margin=margin(0.3,0.3,1,0.3, "cm"))
 
-
 # Ne
 
-s <- summary(mod_ne)$coefficients
+s <- summary(mod_ne)$tTable
 p <- s[,4]
 
-df_temp <- data.frame(threatened=0, mass=mean(dat_ne$mass, na.rm=TRUE), migrates=0,
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
-                      area=mean(dat_ne$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
 mass_sc <- dat_ne$mass#scale(dat_het$mass)
 mass_seq <- seq(range(mass_sc)[1],range(mass_sc)[2], length.out=1000)
 
-actual_seq <- seq(range(dat_ne$mass)[1], range(dat_ne$mass)[2], length.out=1000)
+actual_seq <- mass_seq
+
+mass_seq_sc <- (log(mass_seq) - attr(dat_ne$sc_log_mass, "scaled:center"))/
+  attr(dat_ne$sc_log_mass, "scaled:scale")
 
 nd <- df_temp
 nd <- nd[rep(1,1000),]
-nd$mass <- mass_seq
-pr <- predict(mod_ne, newdata=nd, se.fit=T)
+nd$sc_log_mass <- mass_seq_sc
+pr <- predict(mod_ne, newdata=nd, se.fit=TRUE)
 
-mytheme <-   theme_bw() +
-  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
-  axis.text=element_text(size=16), axis.title=element_text(size=18))
 
-pval <- p["scale(log(mass))"]
+pval <- p["sc_log_mass"]
 if(pval < 0.01){
   pval <- paste0("P < 0.01")
 } else {
@@ -238,23 +232,21 @@ fig_mass <- plot_grid(pl_het, pl_ne) +
   draw_line(x=c(0.15,0.118), y=c(0.45,0.59), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_line(x=c(0.44,0.46), y=c(0.72,0.66), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_image(calypte, 0.72, 0.69, width=0.09, hjust=1.1, vjust=1.06, halign=1,valign=1) +
-  draw_line(x=c(0.66,0.6225), y=c(0.56,0.45), arrow=grid::arrow(length=unit(0.25,"cm"))) +
+  draw_line(x=c(0.66,0.6182), y=c(0.56,0.475), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_image(pelican, 0.97, 0.65, width=0.09, hjust=1.1, vjust=1.06, halign=1,valign=1) +
-  draw_line(x=c(0.92,0.885), y=c(0.5,0.325), arrow=grid::arrow(length=unit(0.25,"cm")))
+  draw_line(x=c(0.92,0.883), y=c(0.5,0.357), arrow=grid::arrow(length=unit(0.25,"cm")))
 
-plot_grid(fig_mass, fig_diet, nrow=2)
+#plot_grid(fig_mass, fig_diet, nrow=2)
 
-ggsave("figures/fig_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
-#ggsave("figures/fig_mass.tiff", compression='lzw', dpi=300, height=4,width=7)
-```
+#ggsave("figures/fig_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
 
-### Diet
+# DIET
 
-```{r}
-
-df_temp <- data.frame(threatened=0, mass=mean(dat_het$mass, na.rm=TRUE), migrates=0,
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
-                      area=mean(dat_het$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
+
 
 # Drawings
 drawings <- list.files('drawings')
@@ -285,15 +277,18 @@ seed_draw <- paste0('drawings/',drawings[draw_seed[1]])
 #ggdraw() +
 #draw_image(paste0('drawings/',drawings[draw_seed[1]]), 1, 1, width=0.15, hjust=1.1, vjust=1.06, halign=1,valign=1)
 #
-
-mc <- glht(mod, linfct=mcp(diet="Tukey"))
+mc <- glht(mod, linfct=c("dietFruiNect - dietInvertebrate = 0",
+                          "dietFruiNect - dietOmnivore = 0",
+                          "dietFruiNect - dietPlantSeed = 0",
+                          "dietInvertebrate - dietOmnivore = 0",
+                          "dietInvertebrate - dietPlantSeed = 0",
+                          "dietOmnivore - dietPlantSeed = 0"))
 summary(mc)
 
 nd <- df_temp[rep(1,length(levels(dat_het$diet))),]
-nd$diet <- levels(dat_het$diet)
+nd$diet <- factor(levels(dat_het$diet),levels=levels(dat_het$diet))
 
 pr <- predict(mod, newdata=nd, se.fit=T)
-
 
 
 dat_raw <- dat_het %>%
@@ -317,23 +312,29 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
   geom_point(col='chocolate2',size=3) +
   geom_text(data=p_df, aes(x=y,y=x,label=text), cex=5) +
   labs(x=expression('log('*italic("H")*")"), y='Diet') +
-  xlim(min(log(dat_raw$Het)), -4) +
+  xlim((min(log(dat_raw$Het))-0.01), -4) +
   mytheme +
   theme(axis.text.y=element_text(margin=margin(r=55)),axis.ticks.y=element_blank())
   #theme(axis.title.x=element_blank())
 
 # Ne
 
-df_temp <- data.frame(threatened=0, mass=mean(dat_ne$mass, na.rm=TRUE), migrates=0,
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
-                      area=mean(dat_ne$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
-
-mc <- glht(mod_ne, linfct=mcp(diet="Tukey"))
+mc <- glht(mod_ne, linfct=c("dietFruiNect - dietInvertebrate = 0",
+                          "dietFruiNect - dietOmnivore = 0",
+                          "dietFruiNect - dietPlantSeed = 0",
+                          "dietInvertebrate - dietOmnivore = 0",
+                          "dietInvertebrate - dietPlantSeed = 0",
+                          "dietOmnivore - dietPlantSeed = 0"))
 summary(mc)
 
+
 nd <- df_temp[rep(1,length(levels(dat_ne$diet))),]
-nd$diet <- levels(dat_ne$diet)
+nd$diet <- factor(levels(dat_ne$diet),levels=levels(dat_ne$diet))
 
 pr <- predict(mod_ne, newdata=nd, se.fit=T)
 
@@ -365,17 +366,14 @@ fig_diet <- plot_grid(pl_het, pl_ne, rel_widths=c(1.8,1), align='h') +
 
 plot_grid(fig_mass, fig_diet, nrow=2)
 
-ggsave("figures/fig_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
+ggsave("figures/fig_pgls_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
 
-```
-
-### Threatened Status
-
-```{r}
-
-df_temp <- data.frame(threatened=0, mass=mean(dat_ne$mass, na.rm=TRUE), migrates=0,
+# IUCN
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
-                      area=mean(dat_het$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
+
 
 levs <- levels(dat_het$IUCN)
 
@@ -400,8 +398,10 @@ LC_draw <- paste0('drawings/','picoides_pubescens.png')
 #
 
 
-mc <- glht(mod, linfct=mcp(IUCN="Tukey"))
+mc <- glht(mod, linfct=c("IUCNLC - IUCNVU", "IUCNLC-IUCNENCR","IUCNNT - IUCNVU = 0","IUCNNT - IUCNENCR = 0",
+                          "IUCNVU - IUCNENCR = 0"))
 summary(mc)
+
 
 nd <- df_temp[rep(1,length(levels(dat_het$IUCN))),]
 nd$IUCN <- factor(levels(dat_het$IUCN),levels=levels(dat_het$IUCN))
@@ -410,19 +410,19 @@ pr <- predict(mod, newdata=nd, se.fit=T)
 
 p_df <- data.frame(y=levels(dat_het$IUCN), x=0.9*max(log(dat_het$Het)),
                    text=c("A","A","B","B")) %>%
-        mutate(y=fct_recode(y, `Endangered+\nCritically\nEndangered`='EN+CR',
+        mutate(y=fct_recode(y, `Endangered+\nCritically\nEndangered`='ENCR',
                                Vulnerable="VU", `Near\nThreatened`='NT',
                                `Least\nConcern`='LC'))
 
 dat_raw <- dat_het %>%
-        mutate(IUCN=fct_recode(IUCN, `Endangered+\nCritically\nEndangered`='EN+CR',
+        mutate(IUCN=fct_recode(IUCN, `Endangered+\nCritically\nEndangered`='ENCR',
                                Vulnerable="VU", `Near\nThreatened`='NT',
                                `Least\nConcern`='LC'))
 
 pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
            upper=pr$fit + 1.96*pr$se.fit,
            IUCN=nd$IUCN) %>%
-          mutate(IUCN=fct_recode(IUCN, `Endangered+\nCritically\nEndangered`='EN+CR',
+          mutate(IUCN=fct_recode(IUCN, `Endangered+\nCritically\nEndangered`='ENCR',
                                Vulnerable="VU", `Near\nThreatened`='NT',
                                `Least\nConcern`='LC'))  %>%
   ggplot(aes(y=IUCN, x=pr)) +
@@ -439,21 +439,23 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
 
 # Ne
 
-
-df_temp <- data.frame(threatened=0, mass=mean(dat_ne$mass, na.rm=TRUE), migrates=0,
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
-                      area=mean(dat_ne$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
-mc <- glht(mod_ne, linfct=mcp(IUCN="Tukey"))
+mc <- glht(mod_ne, linfct=c("IUCNNT - IUCNVU = 0","IUCNNT - IUCNENCR = 0",
+                          "IUCNVU - IUCNENCR = 0"))
 summary(mc)
+
 
 nd <- df_temp[rep(1,length(levels(dat_ne$IUCN))),]
 nd$IUCN <- factor(levels(dat_ne$IUCN),levels=levels(dat_ne$IUCN))
 
 pr <- predict(mod_ne, newdata=nd, se.fit=T)
 
-p_df <- data.frame(y=levels(dat_het$IUCN), x=1.1*max(log(dat_ne$mean_Ne)),
-                   text=c("A","A","A","A"))
+p_df <- data.frame(y=levels(dat_het$IUCN), x=1.08*max(log(dat_ne$mean_Ne)),
+                   text=c("A","B","AB","AB"))
 
 pl_ne <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
            upper=pr$fit + 1.96*pr$se.fit,
@@ -467,6 +469,7 @@ pl_ne <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
   geom_text(data=p_df, aes(x=x,y=y,label=text), cex=5) +
   labs(x=expression(log(italic(N[e]))), y="IUCN status") +
   mytheme +
+  xlim(min(log(dat_ne$mean_Ne))-0.01, 12.5) +
   theme(axis.title.y=element_blank(), axis.ticks.y=element_blank(),
         #axis.text.y=element_text(size=14),
         axis.text.y=element_blank(), axis.text.x=element_text(size=14))
@@ -479,32 +482,34 @@ plot_grid(pl_het, pl_ne, rel_widths=c(0.7,0.4), align='h') +
   draw_image(LC_draw, 0.28, 0.41, width=0.04, hjust=1.1, vjust=1.06, halign=1,valign=1)
 
 
-ggsave("figures/fig_IUCN.tiff", compression='lzw', dpi=300, height=4,width=7)
-```
+ggsave("figures/fig_pgls_IUCN.tiff", compression='lzw', dpi=300, height=4,width=7)
 
-### Present-day area (ENM)
+# Area
 
-```{r}
-
-dat_het %>% arrange(desc(area)) %>% select(Species, area)
+#dat_het %>% arrange(desc(area)) %>% select(Species, area)
 draw_min <- "drawings/geospiza_fortis.png"
-draw_max <- "drawings/tyto_alba.png" 
+draw_max <- "drawings/tyto_alba.png"
 
-df_temp <- data.frame(threatened=0, mass=mean(dat_het$mass, na.rm=TRUE), migrates=0,
-                      diet=factor('Invertebrate', levels=levels(dat_het$diet)),
-                      area=mean(dat_het$area, na.rm=T),IUCN='LC')
+df_temp <- data.frame(sc_log_mass=0,
+                      diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
-s <- summary(mod)$coefficients
+
+s <- summary(mod)$tTable
 p <- s[,4]
 
 area_seq <- seq(range(dat_het$area,na.rm=T)[1],range(dat_het$area,na.rm=T)[2], length.out=1000)
 
+area_seq_sc <- (log(area_seq) - attr(dat_het$sc_log_area, "scaled:center"))/
+  attr(dat_het$sc_log_area, "scaled:scale")
+
 nd <- df_temp
 nd <- nd[rep(1,1000),]
-nd$area <- area_seq
+nd$sc_log_area <- area_seq_sc
 pr <- predict(mod, newdata=nd, se.fit=T)
 
-pval <- p["scale(log(area))"]
+pval <- p["sc_log_area"]
 if(pval < 0.01){
   pval <- paste0("P < 0.01")
 } else {
@@ -525,30 +530,32 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
   theme(axis.title.x=element_blank(),
         plot.margin=margin(0.3,0.3,1,0.3, "cm"))
 
-
 # Ne
 
-dat_ne %>% arrange(area) %>% select(Species, area)
+#dat_ne %>% arrange(area) %>% select(Species, area)
 draw_min_ne <- "drawings/geospiza_fortis.png"
-draw_max_ne <- "drawings/egretta_garzetta.png" 
+draw_max_ne <- "drawings/egretta_garzetta.png"
 
-df_temp <- data.frame(threatened=0, mass=mean(dat_ne$mass, na.rm=TRUE), migrates=0,
+df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
-                      area=mean(dat_ne$area, na.rm=T),IUCN='LC')
+                      sc_log_area=0,
+                      IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
 
-s <- summary(mod_ne)$coefficients
+s <- summary(mod_ne)$tTable
 p <- s[,4]
-
 
 area_seq2 <- seq(range(dat_ne$area,na.rm=T)[1],range(dat_ne$area,na.rm=T)[2], length.out=1000)
 
+area_seq_sc <- (log(area_seq2) - attr(dat_ne$sc_log_area, "scaled:center"))/
+  attr(dat_ne$sc_log_area, "scaled:scale")
+
 nd <- df_temp
 nd <- nd[rep(1,1000),]
-nd$area <- area_seq2
+nd$sc_log_area <- area_seq_sc
 pr <- predict(mod_ne, newdata=nd, se.fit=T)
 
-pval <- p["scale(log(area))"]
+pval <- p["sc_log_area"]
 if(pval < 0.01){
   pval <- paste0("P < 0.01")
 } else {
@@ -577,20 +584,19 @@ plot_grid(pl_het, pl_ne, rel_widths=c(1,1.08)) +
   draw_image(draw_min_ne, 0.72, 0.64, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_image(draw_max_ne, 0.97, 0.72, width=0.12, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_line(x=c(0.65,0.63), y=c(0.49,0.42), arrow=grid::arrow(length=unit(0.25,"cm"))) +
-  draw_line(x=c(0.92,0.94), y=c(0.6,0.5), arrow=grid::arrow(length=unit(0.25,"cm")))
+  draw_line(x=c(0.92,0.942), y=c(0.58,0.48), arrow=grid::arrow(length=unit(0.25,"cm")))
 
-ggsave("figures/fig_area.tiff", compression='lzw', dpi=300, height=4,width=7)
-```
-
-
-### Comparison between H and Mean Ne
-
-```{r}
-dat_all %>%
-  ggplot(aes(x=log(Het), y=log(mean_Ne))) +
-  geom_point() +
-  mytheme +
-  labs(x=expression(log(italic(H))), y=expression(log(mean~italic(N[e]))))
-```
+ggsave("figures/fig_pgls_area.tiff", compression='lzw', dpi=300, height=4,width=7)
 
 
+# table
+
+sjPlot::tab_model(mod, mod_ne, file='table.html')
+
+# stats
+
+stat_df <- data.frame(model=c("Het","Ne"),R2=c(R2(mod)[1],R2(mod_ne)[1]),
+                      lambda=c(attr(mod$apVar,"Pars")[1],
+                      attr(mod_ne$apVar,"Pars")[1]))
+
+write.csv(stat_df, 'model_info.csv')

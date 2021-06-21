@@ -88,7 +88,8 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
   sp_dir <- paste0(tmp_dir,'/',sp)
 
   nboots <- length(list.files(sp_dir, pattern=".txt"))-1
-  stopifnot(nboots >= 30)
+  #stopifnot(nboots >= 30)
+  if(nboots < 30) cat("Boots less than 30\n")
 
   template <- list.files(sp_dir, pattern="\\.0\\.txt$")
   fbase <- gsub("0.txt", "", template)
@@ -143,7 +144,7 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
         labels = scales::trans_format("log10", scales::math_format(10^.x))) +
     #scale_y_continuous(breaks = round(seq(0, round(max(dat$pop))+2, length.out=4),1)) +
     #ylab(expression(paste("Effective population size (x", 10^4, ")"))) +
-    ylab(expression(Normalized~italic(Ne))) +
+    ylab(expression(Normalised~italic(Ne))) +
     ylim(ymin,ymax) +
     ggtitle(bquote(italic(.(gsub("_", " ", sp)))))
 
@@ -189,7 +190,7 @@ area_plot <- function(pred_maps, pl_map, x_max=787000){
     #scale_y_log10(expression(paste("Habitat (", km^2, ")")),
     #    breaks = scales::trans_breaks("log10", function(x) 10^x),
     #    labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-    ylab("Normalized area") +
+    ylab("Normalised area") +
     geom_line(linetype=2) +
     geom_point(size=3,col=cols)
 }
