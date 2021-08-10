@@ -1,5 +1,7 @@
 source('plot_functions.R')
 
+# Make appendix with all individual species plots------------------------------
+
 cols <- rep('grey80',4)
 
 sp <- read.csv("data/dat_all.csv", header=TRUE)$Species
@@ -66,9 +68,6 @@ make_plot <- function(species){
 
   frm <- plot_grid(legend, dg2, nrow=1, rel_widths=c(0.2,1))
 
-  #plot_grid(pp, apl, frm, nrow=3, rel_heights=c(1,0.6,0.7),
-  #          rel_widths=c(2,1,1))
-
   top_rows <- plot_grid(pp, apl, nrow=2, align='v', rel_heights=c(1,0.6))
 
   out <- plot_grid(top_rows, frm, nrow=2, rel_heights=c(1,0.4))
@@ -79,9 +78,9 @@ make_plot <- function(species){
   out
 }
 
-make_plot(allsp[1])
+#make_plot(allsp[30])
 
-pdf("species_figures.pdf", paper="letter")
+pdf("figures/species_figures_highres.pdf", paper="letter")
 for (i in sort(allsp)){
   out <- make_plot(i)
   plot(out)
@@ -89,40 +88,14 @@ for (i in sort(allsp)){
 }
 dev.off()
 
-tools::compactPDF("species_figures_print.pdf", gs_quality="printer")
-
-for (i in 59){
-
-  tryCatch({
-    out <- make_plot(allsp[i])
-    ggsave(paste0('species_figures/',allsp[i],'.tiff'), width=6, height=7,
-         dpi=300, compression='lzw')
-
-  }, error=function(e) cat(paste("Failed for species", allsp[i],"\n")))
-
-}
-
-ggsave(paste0('figures/','Acanthisitta_chloris','.tiff'), width=6, height=7,
-         dpi=300, compression='lzw')
+# Compress PDF
+file.copy("figures/species_figures_highres.pdf", "figures/species_figures_print.pdf")
+tools::compactPDF("figures/species_figures_print.pdf", gs_quality="printer")
 
 
+# Make figure 3 for paper------------------------------------------------------
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####################
-
+# Modified plotting code
 make_plot2 <- function(species, yaxis=TRUE, yvjust=0){
 
   draw_file <-  get_drawing(species)
@@ -180,21 +153,12 @@ make_plot2 <- function(species, yaxis=TRUE, yvjust=0){
   dist_grid <- plot_grid(eh, gm , ig, pli, nrow=1)
   dg2 <- bl_plot  + draw_plot(dist_grid, x=0, y=0, width=8, height=1)
 
-  #frm <- plot_grid(legend, dg2, nrow=1, rel_widths=c(0.2,1))
   frm <- dg2
-
-  #plot_grid(pp, apl, frm, nrow=3, rel_heights=c(1,0.6,0.7),
-  #          rel_widths=c(2,1,1))
-
-  #top_rows <- plot_grid(pp, apl, nrow=2, align='v', rel_heights=c(1,0.6))
 
   top_rows <- pp
 
   out <- plot_grid(top_rows, frm, nrow=2, rel_heights=c(1,0.6), align="v")
-  #if(!is.null(draw_file)){
-  #  out <- ggdraw() + draw_plot(out) +
-  #      draw_image(draw_file, 0, 1, width=0.2, hjust=1, vjust=1, halign=0,valign=1)
-  #}
+
   out
 }
 
@@ -250,38 +214,22 @@ plot_map2 <- function(pred, title=NULL, legend="none", use_mask=NULL,
 
 }
 
-  pred_maps <- readRDS(paste0('data2/maps/','Calypte_anna','_maps.Rds'))
+# Make habitat map legend
+pred_maps <- readRDS(paste0('data2/maps/','Calypte_anna','_maps.Rds'))
+grobs <- ggplotGrob(plot_map2(pred_maps[[1]], 'test',"left"))$grobs
+legend <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
 
-
-  grobs <- ggplotGrob(
-            plot_map2(pred_maps[[1]], 'test',"left"))$grobs
-  legend <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
-
-
-
-
-make_plot2('Calypte_anna')
-
-make_plot('Nipponia_nippon')
+# Make individual plots
+pl1 <- make_plot2('Corvus_brachyrhynchos', yvjust=7) +
+  theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
 
 pl2 <- make_plot2('Buceros_rhinoceros', yaxis=FALSE) +
   theme(plot.margin=unit(c(0,0.2,0,0),"cm"))
 
-#pl1 <- make_plot2('Cariama_cristata', yvjust=7) +
-#  theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
-
-pl1 <- make_plot2('Corvus_brachyrhynchos', yvjust=7) +
-  theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
-
-#make_plot('Haliaeetus_albicilla')
-
+# Combine plots
 plot_grid(pl1, pl2, rel_widths=c(1,0.85)) + draw_plot(legend, -0.44, -0.3) +
   draw_image("drawings/corvus_brachyrhynchos.png", 0.14, 0.38, width=0.15) +
   draw_image("drawings/buceros_rhinoceros.png", 0.58, 0.39, width=0.15) +
   draw_text("Time since present (years)", 0.55,0.40, size=12)
 
-ggsave("figure_maps_new.tiff", compression='lzw', dpi=300, width=8, height=4.5)
-
-
-
-
+ggsave("figures/fig3_psmc_maps.tiff", compression='lzw', dpi=300, width=8, height=4.5)

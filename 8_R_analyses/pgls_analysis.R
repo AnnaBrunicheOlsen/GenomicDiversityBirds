@@ -7,6 +7,7 @@ library(ape)
 library(nlme)
 library(rr2)
 
+# Custom methods
 model.matrix.gls <- function(object, ...) {
     model.matrix(terms(object), data = getData(object), ...)
 }
@@ -17,9 +18,11 @@ terms.gls <- function(object, ...) {
     terms(model.frame(object), ...)
 }
 
+# Read in data
 dat_all <- read.csv("data/dat_all.csv")
 bird_tree <- read.tree('data/data/species.nwk')
 
+# Adjust species names to match tree
 dat_all$species_adjust <- dat_all$Species
 dat_all$species_adjust[dat_all$Species=="Dryobates_pubescens"] <-
   "Picoides_pubescens"
@@ -36,6 +39,7 @@ dat_all$species_adjust[dat_all$Species=="Scolopax_mira"] <-
 dat_all$species_adjust[dat_all$Species=="Tinamus_guttatus"] <-
   "Eudromia_elegans"
 
+# Adjust covariates
 dat_all <- dat_all %>%
   mutate(IUCN = fct_recode(IUCN, ENCR="EN+CR"))
 
@@ -46,29 +50,13 @@ dat_all$IUCN <- factor(dat_all$IUCN, levels=c("LC","NT","VU","ENCR"))
 
 dat_all$sc_log_mass <- scale(log(dat_all$mass))
 
+ggplot(dat_all, aes(x=diet, y=log(mass))) +
+  geom_boxplot()
 
-# Sample sizes
-
-sp <- dat_all$Species
-sp[4] <- 'Anser_cygnoid'
-
-pnts <- rep(NA, length(sp))
-
-for (i in 1:length(sp)){
-
-  fname <- paste0("/mnt/media/bird_enm/points/",sp[i],"_points.Rds")
-
-  if(file.exists(fname)){
-  inp <- readRDS(fname)
-  pnts[i] <- nrow(inp)
-  }
-}
+#ggsave("diet_vs_mass.png")
 
 
-
-
-#############
-
+# Run heterozygosity analysis--------------------------------------------------
 
 dat_het <- dat_all %>%
   rename(area=present)
@@ -79,20 +67,11 @@ mod <- gls(log(Het) ~ IUCN + sc_log_mass + diet + sc_log_area,
            data=dat_het,
            correlation=corPagel(1,bird_tree, form=~species_adjust))
 
-dat_het_sub <- dat_het %>%
-  filter(!species_adjust %in% sp[pnts < 100])
-
-mod_ss <- gls(log(Het) ~ IUCN + sc_log_mass + diet + sc_log_area,
-           data=dat_het_sub,
-           correlation=corPagel(1,bird_tree, form=~species_adjust))
-
-
-
-#sjPlot::tab_model(mod)
-
+summary(mod)
 R2(mod)
 
-############
+# Run Ne analysis--------------------------------------------------------------
+
 dat_ne <- dat_all %>%
   rename(area=past_area_mean)
 
@@ -105,27 +84,20 @@ mod_ne <- gls(log(mean_Ne) ~ IUCN + sc_log_mass + diet + sc_log_area,
 summary(mod_ne)
 R2(mod_ne)
 
-######
+# Tables-----------------------------------------------------------------------
 
-dat_ne$cv_Ne <- sqrt(dat_ne$var_Ne)/dat_ne$mean_Ne
+sjPlot::tab_model(mod, mod_ne, file='model_results_table.html')
 
-mod_ne_cv <- gls(log(cv_Ne) ~ IUCN + sc_log_mass + diet + sc_log_area,
-           data=dat_ne,
-           correlation=corPagel(1,bird_tree, form=~species_adjust))
-summary(mod_ne_cv)
+# stats
+stat_df <- data.frame(model=c("Het","Ne"),R2=c(R2(mod)[1],R2(mod_ne)[1]),
+                      lambda=c(attr(mod$apVar,"Pars")[1],
+                      attr(mod_ne$apVar,"Pars")[1]))
 
-dat_ne$sc_log_areacv <- scale(log(sqrt(dat_ne$past_area_var)/dat_ne$area))
+write.csv(stat_df, 'model_stats.csv')
 
-mod_ne_habcv <- gls(log(mean_Ne) ~ IUCN + sc_log_mass + diet + sc_log_areacv,
-           data=dat_ne,
-           correlation=corPagel(1,bird_tree, form=~species_adjust))
-summary(mod_ne_habcv)
+# Mass and diet figure---------------------------------------------------------
 
-mod_ne_bothcv <- gls(log(cv_Ne) ~ IUCN + sc_log_mass + diet + sc_log_areacv,
-           data=dat_ne,
-           correlation=corPagel(1,bird_tree, form=~species_adjust))
-summary(mod_ne_bothcv)
-
+# Mass
 
 low_mass <- dat_het$Species[1]
 low_mass_draw <- paste0("drawings/",tolower(low_mass),".png")
@@ -139,6 +111,7 @@ calypte <- paste0("drawings/","calypte_anna.png")
 s <- summary(mod)$tTable
 p <- s[,4]
 
+# Heterozygosity
 df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_het$diet)),
                       sc_log_area=0,
@@ -155,7 +128,7 @@ mass_seq_sc <- (log(mass_seq) - attr(dat_het$sc_log_mass, "scaled:center"))/
 nd <- df_temp
 nd <- nd[rep(1,1000),]
 nd$sc_log_mass <- mass_seq_sc
-pr <- predict(mod, newdata=nd, se.fit=TRUE)
+pr <- AICcmodavg::predictSE.gls(mod, newdata=nd)
 
 mytheme <-   theme_bw() +
   theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
@@ -182,7 +155,6 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
         plot.margin=margin(0.3,0.3,1,0.3, "cm"))
 
 # Ne
-
 s <- summary(mod_ne)$tTable
 p <- s[,4]
 
@@ -202,8 +174,7 @@ mass_seq_sc <- (log(mass_seq) - attr(dat_ne$sc_log_mass, "scaled:center"))/
 nd <- df_temp
 nd <- nd[rep(1,1000),]
 nd$sc_log_mass <- mass_seq_sc
-pr <- predict(mod_ne, newdata=nd, se.fit=TRUE)
-
+pr <- AICcmodavg::predictSE.gls(mod_ne, newdata=nd)
 
 pval <- p["sc_log_mass"]
 if(pval < 0.01){
@@ -236,12 +207,7 @@ fig_mass <- plot_grid(pl_het, pl_ne) +
   draw_image(pelican, 0.97, 0.65, width=0.09, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_line(x=c(0.92,0.883), y=c(0.5,0.357), arrow=grid::arrow(length=unit(0.25,"cm")))
 
-#plot_grid(fig_mass, fig_diet, nrow=2)
-
-#ggsave("figures/fig_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
-
-# DIET
-
+# Diet
 df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
                       sc_log_area=0,
@@ -274,9 +240,7 @@ seed <- tolower(unique(dat_het$Species[dat_het$diet==levs[5]]))
 draw_seed <- which(sp_drawings %in% seed)
 seed_draw <- paste0('drawings/',drawings[draw_seed[1]])
 
-#ggdraw() +
-#draw_image(paste0('drawings/',drawings[draw_seed[1]]), 1, 1, width=0.15, hjust=1.1, vjust=1.06, halign=1,valign=1)
-#
+# Heterozygosity
 mc <- glht(mod, linfct=c("dietFruiNect - dietInvertebrate = 0",
                           "dietFruiNect - dietOmnivore = 0",
                           "dietFruiNect - dietPlantSeed = 0",
@@ -287,9 +251,7 @@ summary(mc)
 
 nd <- df_temp[rep(1,length(levels(dat_het$diet))),]
 nd$diet <- factor(levels(dat_het$diet),levels=levels(dat_het$diet))
-
-pr <- predict(mod, newdata=nd, se.fit=T)
-
+pr <- AICcmodavg::predictSE.gls(mod, newdata=nd)
 
 dat_raw <- dat_het %>%
   mutate(diet=fct_recode(diet, `Plants/Seeds`='PlantSeed',
@@ -335,11 +297,10 @@ summary(mc)
 
 nd <- df_temp[rep(1,length(levels(dat_ne$diet))),]
 nd$diet <- factor(levels(dat_ne$diet),levels=levels(dat_ne$diet))
-
-pr <- predict(mod_ne, newdata=nd, se.fit=T)
+pr <- AICcmodavg::predictSE.gls(mod_ne, newdata=nd)
 
 p_df <- data.frame(y=levels(dat_ne$diet), x=0.97*max(log(dat_ne$mean_Ne)),
-                   text=c("B","B","AB","AB","A"))
+                   text=c("B","AB","AB","AB","A"))
 
 pl_ne <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
            upper=pr$fit + 1.96*pr$se.fit,
@@ -366,9 +327,10 @@ fig_diet <- plot_grid(pl_het, pl_ne, rel_widths=c(1.8,1), align='h') +
 
 plot_grid(fig_mass, fig_diet, nrow=2)
 
-ggsave("figures/fig_pgls_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
+ggsave("figures/fig4_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
 
-# IUCN
+
+# IUCN figure------------------------------------------------------------------
 df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
                       sc_log_area=0,
@@ -397,8 +359,8 @@ LC_draw <- paste0('drawings/','picoides_pubescens.png')
 #draw_image(paste0('drawings/',drawings[draw_LC[18]]), 1, 1, width=0.15, hjust=1.1, vjust=1.06, halign=1,valign=1)
 #
 
-
-mc <- glht(mod, linfct=c("IUCNLC - IUCNVU", "IUCNLC-IUCNENCR","IUCNNT - IUCNVU = 0","IUCNNT - IUCNENCR = 0",
+# Heterozygosity
+mc <- glht(mod, linfct=c("IUCNNT - IUCNVU = 0","IUCNNT - IUCNENCR = 0",
                           "IUCNVU - IUCNENCR = 0"))
 summary(mc)
 
@@ -406,7 +368,7 @@ summary(mc)
 nd <- df_temp[rep(1,length(levels(dat_het$IUCN))),]
 nd$IUCN <- factor(levels(dat_het$IUCN),levels=levels(dat_het$IUCN))
 
-pr <- predict(mod, newdata=nd, se.fit=T)
+pr <- AICcmodavg::predictSE.gls(mod, newdata=nd, se.fit=T)
 
 p_df <- data.frame(y=levels(dat_het$IUCN), x=0.9*max(log(dat_het$Het)),
                    text=c("A","A","B","B")) %>%
@@ -452,7 +414,7 @@ summary(mc)
 nd <- df_temp[rep(1,length(levels(dat_ne$IUCN))),]
 nd$IUCN <- factor(levels(dat_ne$IUCN),levels=levels(dat_ne$IUCN))
 
-pr <- predict(mod_ne, newdata=nd, se.fit=T)
+pr <- AICcmodavg::predictSE.gls(mod_ne, newdata=nd, se.fit=T)
 
 p_df <- data.frame(y=levels(dat_het$IUCN), x=1.08*max(log(dat_ne$mean_Ne)),
                    text=c("A","B","AB","AB"))
@@ -482,11 +444,12 @@ plot_grid(pl_het, pl_ne, rel_widths=c(0.7,0.4), align='h') +
   draw_image(LC_draw, 0.28, 0.41, width=0.04, hjust=1.1, vjust=1.06, halign=1,valign=1)
 
 
-ggsave("figures/fig_pgls_IUCN.tiff", compression='lzw', dpi=300, height=4,width=7)
+ggsave("figures/fig1_IUCN.tiff", compression='lzw', dpi=300, height=4,width=7)
 
-# Area
 
-#dat_het %>% arrange(desc(area)) %>% select(Species, area)
+# Habitat area-----------------------------------------------------------------
+
+
 draw_min <- "drawings/geospiza_fortis.png"
 draw_max <- "drawings/tyto_alba.png"
 
@@ -496,6 +459,7 @@ df_temp <- data.frame(sc_log_mass=0,
                       IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
 
+# Heterozygosity
 s <- summary(mod)$tTable
 p <- s[,4]
 
@@ -507,7 +471,7 @@ area_seq_sc <- (log(area_seq) - attr(dat_het$sc_log_area, "scaled:center"))/
 nd <- df_temp
 nd <- nd[rep(1,1000),]
 nd$sc_log_area <- area_seq_sc
-pr <- predict(mod, newdata=nd, se.fit=T)
+pr <- AICcmodavg::predictSE.gls(mod, newdata=nd, se.fit=T)
 
 pval <- p["sc_log_area"]
 if(pval < 0.01){
@@ -553,7 +517,7 @@ area_seq_sc <- (log(area_seq2) - attr(dat_ne$sc_log_area, "scaled:center"))/
 nd <- df_temp
 nd <- nd[rep(1,1000),]
 nd$sc_log_area <- area_seq_sc
-pr <- predict(mod_ne, newdata=nd, se.fit=T)
+pr <- AICcmodavg::predictSE.gls(mod_ne, newdata=nd, se.fit=T)
 
 pval <- p["sc_log_area"]
 if(pval < 0.01){
@@ -578,25 +542,13 @@ pl_ne <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
 
 plot_grid(pl_het, pl_ne, rel_widths=c(1,1.08)) +
   draw_label("log(suitable habitat area)", x=0.5, y=  0, vjust=-1, angle= 0, size=18) +
-  draw_image(draw_min, 0.21, 0.89, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
+  draw_image(draw_min, 0.21, 0.94, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_image(draw_max, 0.47, 0.49, width=0.12, hjust=1.1, vjust=1.06, halign=1,valign=1) +
+  draw_line(x=c(0.167,0.167), y=c(0.765,0.72), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_line(x=c(0.43,0.445), y=c(0.38,0.56), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_image(draw_min_ne, 0.72, 0.64, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_image(draw_max_ne, 0.97, 0.72, width=0.12, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_line(x=c(0.65,0.63), y=c(0.49,0.42), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_line(x=c(0.92,0.942), y=c(0.58,0.48), arrow=grid::arrow(length=unit(0.25,"cm")))
 
-ggsave("figures/fig_pgls_area.tiff", compression='lzw', dpi=300, height=4,width=7)
-
-
-# table
-
-sjPlot::tab_model(mod, mod_ne, file='table.html')
-
-# stats
-
-stat_df <- data.frame(model=c("Het","Ne"),R2=c(R2(mod)[1],R2(mod_ne)[1]),
-                      lambda=c(attr(mod$apVar,"Pars")[1],
-                      attr(mod_ne$apVar,"Pars")[1]))
-
-write.csv(stat_df, 'model_info.csv')
+ggsave("figures/fig2_area.tiff", compression='lzw', dpi=300, height=4,width=7)

@@ -155,11 +155,16 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
   }
 
   for (i in 1:length(bs)){
-    bs_sub <- bs[[i]][bs[[i]]$time>=eholo[1],]
+    #bs_sub <- bs[[i]][bs[[i]]$time>=eholo[1],]
+    bs_sub <- bs[[i]]
     out <- out + geom_step(data=bs_sub, col=linecol, alpha=0.1)
   }
 
   out <- out + geom_step(size=1, col=linecol)
+
+
+  #out <- out + geom_point()
+
   return(list(plot=out, x_max=x_max))
 }
 
