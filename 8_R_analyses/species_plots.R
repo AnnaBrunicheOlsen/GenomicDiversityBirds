@@ -78,7 +78,7 @@ make_plot <- function(species){
   out
 }
 
-#make_plot(allsp[30])
+#make_plot(allsp[2])
 
 pdf("figures/species_figures_highres.pdf", paper="letter")
 for (i in sort(allsp)){
@@ -89,7 +89,8 @@ for (i in sort(allsp)){
 dev.off()
 
 # Compress PDF
-file.copy("figures/species_figures_highres.pdf", "figures/species_figures_print.pdf")
+file.copy("figures/species_figures_highres.pdf", "figures/species_figures_print.pdf",
+          overwrite=TRUE)
 tools::compactPDF("figures/species_figures_print.pdf", gs_quality="printer")
 
 

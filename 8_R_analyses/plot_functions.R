@@ -145,7 +145,7 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
     #scale_y_continuous(breaks = round(seq(0, round(max(dat$pop))+2, length.out=4),1)) +
     #ylab(expression(paste("Effective population size (x", 10^4, ")"))) +
     ylab(expression(Normalised~italic(Ne))) +
-    ylim(ymin,ymax) +
+    #ylim(ymin,ymax) +
     ggtitle(bquote(italic(.(gsub("_", " ", sp)))))
 
   if(!xtitle){
