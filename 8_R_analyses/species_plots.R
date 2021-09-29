@@ -31,21 +31,29 @@ make_plot <- function(species){
   } else{
     psmc_species <- species
   }
+
+  grays <- terrain.colors(5)[1:4]
+
   ppl <- plot_psmc(zipped=paste0('data/data/psmc/',psmc_species,'.tar.gz'),
                   #terrain.colors(300)[1],
                   'chocolate2',
                   #ggpubr::get_palette("npg", 1),
-                  cols[1:4], FALSE)
+                  grays, FALSE)
   pp <- ppl$plot
 
   pred_maps <- readRDS(paste0('data2/maps/',species,'_maps.Rds'))
   pl_map <- readRDS(paste0('data2/maps/',species,'_pliest_maps.Rds'))
 
   #present <- plot_map(pred_maps$present, title="Present day", bcolor='white')
-  eh <- plot_map(pred_maps$earlyholo, title=NULL, bcolor='white')
-  ig <- plot_map(pred_maps$interglacial, title=NULL, bcolor='white')
-  gm <- plot_map(pred_maps$glacialmax, title=NULL, bcolor='white')
-  pli <- plot_map(pl_map$pliest, title=NULL, bcolor='white')
+  #eh <- plot_map(pred_maps$earlyholo, title=NULL, bcolor='white')
+  #ig <- plot_map(pred_maps$interglacial, title=NULL, bcolor='white')
+  #gm <- plot_map(pred_maps$glacialmax, title=NULL, bcolor='white')
+  #pli <- plot_map(pl_map$pliest, title=NULL, bcolor='white')
+
+  eh <- plot_map(pred_maps$earlyholo, title=NULL, bcolor=grays[1])
+  ig <- plot_map(pred_maps$interglacial, title=NULL, bcolor=grays[3])
+  gm <- plot_map(pred_maps$glacialmax, title=NULL, bcolor=grays[2])
+  pli <- plot_map(pl_map$pliest, title=NULL, bcolor=grays[4])
 
   apl <- area_plot(pred_maps, pl_map, ppl$x_max)
 
@@ -78,7 +86,7 @@ make_plot <- function(species){
   out
 }
 
-#make_plot(allsp[2])
+make_plot(allsp[2])
 
 pdf("figures/species_figures_highres.pdf", paper="letter")
 for (i in sort(allsp)){
@@ -221,16 +229,28 @@ grobs <- ggplotGrob(plot_map2(pred_maps[[1]], 'test',"left"))$grobs
 legend <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
 
 # Make individual plots
-pl1 <- make_plot2('Corvus_brachyrhynchos', yvjust=7) +
+#pl1 <- make_plot2('Corvus_brachyrhynchos', yvjust=7) +
+#  theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
+pl1 <- make_plot2('Acanthisitta_chloris', yvjust=7) +
   theme(plot.margin=unit(c(0,0.1,0,1),"cm"))
+
 
 pl2 <- make_plot2('Buceros_rhinoceros', yaxis=FALSE) +
   theme(plot.margin=unit(c(0,0.2,0,0),"cm"))
 
 # Combine plots
 plot_grid(pl1, pl2, rel_widths=c(1,0.85)) + draw_plot(legend, -0.44, -0.3) +
-  draw_image("drawings/corvus_brachyrhynchos.png", 0.14, 0.38, width=0.15) +
+  #draw_image("drawings/corvus_brachyrhynchos.png", 0.14, 0.38, width=0.15) +
+  draw_image("drawings/acanthisitta_chloris.png", 0.14, 0.38, width=0.12) +
   draw_image("drawings/buceros_rhinoceros.png", 0.58, 0.39, width=0.15) +
   draw_text("Time since present (years)", 0.55,0.40, size=12)
 
-ggsave("figures/fig3_psmc_maps.tiff", compression='lzw', dpi=300, width=8, height=4.5)
+ggsave("figures/fig3_psmc_maps_updated.tiff", compression='lzw', dpi=300, width=8, height=4.5)
+
+tiff("figures/fig3_psmc_maps_updated.tiff", compression='lzw', res=300, width=8, height=4.5, units='in')
+plot_grid(pl1, pl2, rel_widths=c(1,0.85)) + draw_plot(legend, -0.44, -0.3) +
+  #draw_image("drawings/corvus_brachyrhynchos.png", 0.14, 0.38, width=0.15) +
+  draw_image("drawings/acanthisitta_chloris.png", 0.135, 0.38, width=0.07) +
+  draw_image("drawings/buceros_rhinoceros.png", 0.58, 0.39, width=0.15) +
+  draw_text("Time since present (years)", 0.55,0.40, size=12)
+dev.off()

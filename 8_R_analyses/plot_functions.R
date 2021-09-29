@@ -47,6 +47,7 @@ plot_map <- function(pred, title=NULL, legend="none", use_mask=NULL,
     theme(legend.position=legend,
           #panel.border=element_rect(fill='transparent'),
           plot.subtitle=element_text(hjust=0.5),
+          panel.border = element_rect(colour = bcolor, fill=NA, size=1),
           plot.title=element_text(hjust=0.5, size=12)
           #plot.title=element_text(face='bold')
           )
@@ -171,6 +172,7 @@ plot_psmc <- function(zipped, linecol, cols, xtitle=TRUE){
 area_plot <- function(pred_maps, pl_map, x_max=787000){
 
   area_dat <- data.frame(
+      names=letters[1:4],
       area=unlist(get_areas(c(pred_maps, pl_map["pliest"])))[c(4,3,2,6)],
       time=c(mean(c(8.326e3,11.7e3)),21000,130000,787000))
 
@@ -197,6 +199,8 @@ area_plot <- function(pred_maps, pl_map, x_max=787000){
     #    labels = scales::trans_format("log10", scales::math_format(10^.x))) +
     ylab("Normalised area") +
     geom_line(linetype=2) +
-    geom_point(size=3,col=cols)
+    geom_point(aes(col=names), size=3) +
+    scale_color_manual(values=terrain.colors(5)[1:4]) +
+    theme(legend.position='none')
 }
 

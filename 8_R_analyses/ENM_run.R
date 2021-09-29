@@ -53,3 +53,22 @@ plot_occ(occs, s)
     pliest_map <- predict_maps(best_pl, occs, covs_pl,
                                list(pliest=pliest), s, pliest=TRUE)
 
+# Check occurrence record accuracy
+setwd("/mnt/media/bird_enm/points") # location of stored occurrence record .Rds files
+files <- list.files()
+sp <- gsub("_points.Rds", "", files)
+spname <- sapply(strsplit(sp, "_"), function(x) x[[2]])
+
+correct_pct <- rep(NA, length(sp))
+names(correct_pct) <- sp
+for (i in 1:length(files)){
+  dat <- readRDS(files[i])
+  if("SCINAME" %in% names(dat)){
+    is_correct <- grepl(spname[i], dat$SCINAME)
+  } else if("name" %in% names(dat)){
+    is_correct <- grepl(spname[i], dat$name)
+  }
+  correct_pct[i] <- mean(is_correct, na.rm=T)
+}
+
+correct_pct

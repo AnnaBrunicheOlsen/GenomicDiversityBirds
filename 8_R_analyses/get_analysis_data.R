@@ -43,7 +43,8 @@ areas <- read.csv("data/enm_areas.csv")
 areas <- areas %>%
   mutate(species = recode(species, Anser_cygnoid="Anser_cygnoides")) %>%
   mutate(past_area_mean = c(pliest+interglacial+glacialmax+earlyholo)/4) %>%
-  mutate(past_area_mean_noholo = c(pliest+interglacial+glacialmax)/3)
+  mutate(past_area_mean_noholo = c(pliest+interglacial+glacialmax)/3) %>%
+  mutate(past_area_mean_pl_ig = (pliest+interglacial)/2)
 
 areas_var <- apply(areas[,c("pliest","interglacial","glacialmax","earlyholo")],
                    1,var,na.rm=T)
@@ -119,6 +120,6 @@ dat <- dat %>%
   filter(Species != "Corvus_cornix_AKA_corvus_corone") %>%
   left_join(all_mean) %>%
   select(Species, Het, mean_Ne, var_Ne, mass, diet, IUCN, present, past_area_mean,
-         past_area_mean_noholo, past_area_var)
+         past_area_mean_noholo, past_area_mean_pl_ig, past_area_var)
 
 write.csv(dat, "data/dat_all.csv", row.names=FALSE)
