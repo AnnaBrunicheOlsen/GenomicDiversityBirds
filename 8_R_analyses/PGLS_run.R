@@ -1,3 +1,4 @@
+# Run PGLS analyses and generate associated figures 1, 2, 4
 library(multcomp)
 library(tidyverse)
 library(readxl)
@@ -18,8 +19,9 @@ terms.gls <- function(object, ...) {
     terms(model.frame(object), ...)
 }
 
-# Read in data
+# Read in response and covariate data
 dat_all <- read.csv("data/dat_all.csv")
+# Phylogenetic data
 bird_tree <- read.tree('data/data/species.nwk')
 
 # Adjust species names to match tree
@@ -52,9 +54,6 @@ dat_all$sc_log_mass <- scale(log(dat_all$mass))
 
 ggplot(dat_all, aes(x=diet, y=log(mass))) +
   geom_boxplot()
-
-#ggsave("diet_vs_mass.png")
-
 
 # Run heterozygosity analysis--------------------------------------------------
 
@@ -95,7 +94,7 @@ stat_df <- data.frame(model=c("Het","Ne"),R2=c(R2(mod)[1],R2(mod_ne)[1]),
 
 write.csv(stat_df, 'model_stats.csv')
 
-# Mass and diet figure---------------------------------------------------------
+# Mass and diet figure (Fig 4)-------------------------------------------------
 
 # Mass
 
@@ -163,7 +162,7 @@ df_temp <- data.frame(sc_log_mass=0,
                       sc_log_area=0,
                       IUCN=factor('LC',levels=c("LC","NT","VU","ENCR")))
 
-mass_sc <- dat_ne$mass#scale(dat_het$mass)
+mass_sc <- dat_ne$mass
 mass_seq <- seq(range(mass_sc)[1],range(mass_sc)[2], length.out=1000)
 
 actual_seq <- mass_seq
@@ -277,7 +276,6 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
   xlim((min(log(dat_raw$Het))-0.01), -4) +
   mytheme +
   theme(axis.text.y=element_text(margin=margin(r=55)),axis.ticks.y=element_blank())
-  #theme(axis.title.x=element_blank())
 
 # Ne
 
@@ -323,14 +321,13 @@ fig_diet <- plot_grid(pl_het, pl_ne, rel_widths=c(1.8,1), align='h') +
   draw_image(omni_draw, 0.30, 0.85, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_image(seed_draw, 0.30, 1.01, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1)
 
-#ggsave("figures/fig_diet.tiff", compression='lzw', dpi=300, height=5,width=8)
-
 plot_grid(fig_mass, fig_diet, nrow=2)
 
 ggsave("figures/fig4_traits.tiff", compression='lzw', dpi=300, height=8, width=9)
 
 
-# IUCN figure------------------------------------------------------------------
+# IUCN figure (Fig 1)----------------------------------------------------------
+
 df_temp <- data.frame(sc_log_mass=0,
                       diet=factor('Invertebrate', levels=levels(dat_ne$diet)),
                       sc_log_area=0,
@@ -354,10 +351,6 @@ NT_draw <- paste0('drawings/',drawings[draw_NT[2]])
 LC <- tolower(unique(dat_het$Species[dat_het$IUCN==levs[1]]))
 draw_LC <- which(sp_drawings %in% LC)
 LC_draw <- paste0('drawings/','picoides_pubescens.png')
-
-#ggdraw() +
-#draw_image(paste0('drawings/',drawings[draw_LC[18]]), 1, 1, width=0.15, hjust=1.1, vjust=1.06, halign=1,valign=1)
-#
 
 # Heterozygosity
 mc <- glht(mod, linfct=c("IUCNNT - IUCNVU = 0","IUCNNT - IUCNENCR = 0",
@@ -447,8 +440,7 @@ plot_grid(pl_het, pl_ne, rel_widths=c(0.7,0.4), align='h') +
 ggsave("figures/fig1_IUCN.tiff", compression='lzw', dpi=300, height=4,width=7)
 
 
-# Habitat area-----------------------------------------------------------------
-
+# Habitat area figure (Fig 2)--------------------------------------------------
 
 draw_min <- "drawings/geospiza_fortis.png"
 draw_max <- "drawings/tyto_alba.png"
@@ -463,7 +455,8 @@ df_temp <- data.frame(sc_log_mass=0,
 s <- summary(mod)$tTable
 p <- s[,4]
 
-area_seq <- seq(range(dat_het$area,na.rm=T)[1],range(dat_het$area,na.rm=T)[2], length.out=1000)
+area_seq <- seq(range(dat_het$area,na.rm=T)[1],
+                range(dat_het$area,na.rm=T)[2], length.out=1000)
 
 area_seq_sc <- (log(area_seq) - attr(dat_het$sc_log_area, "scaled:center"))/
   attr(dat_het$sc_log_area, "scaled:scale")
@@ -496,7 +489,6 @@ pl_het <- data.frame(pr=pr$fit, lower=pr$fit - 1.96*pr$se.fit,
 
 # Ne
 
-#dat_ne %>% arrange(area) %>% select(Species, area)
 draw_min_ne <- "drawings/geospiza_fortis.png"
 draw_max_ne <- "drawings/egretta_garzetta.png"
 
@@ -544,7 +536,7 @@ plot_grid(pl_het, pl_ne, rel_widths=c(1,1.08)) +
   draw_label("log(suitable habitat area)", x=0.5, y=  0, vjust=-1, angle= 0, size=18) +
   draw_image(draw_min, 0.21, 0.94, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_image(draw_max, 0.47, 0.49, width=0.12, hjust=1.1, vjust=1.06, halign=1,valign=1) +
-  draw_line(x=c(0.167,0.167), y=c(0.765,0.72), arrow=grid::arrow(length=unit(0.25,"cm"))) +
+  draw_line(x=c(0.167,0.163), y=c(0.765,0.72), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_line(x=c(0.43,0.445), y=c(0.38,0.56), arrow=grid::arrow(length=unit(0.25,"cm"))) +
   draw_image(draw_min_ne, 0.72, 0.64, width=0.08, hjust=1.1, vjust=1.06, halign=1,valign=1) +
   draw_image(draw_max_ne, 0.97, 0.72, width=0.12, hjust=1.1, vjust=1.06, halign=1,valign=1) +

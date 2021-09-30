@@ -7,7 +7,7 @@ if(!file.exists('data/enm_areas.csv')){
   library(raster)
   library(pbapply)
 
-  allsp <- list.files("data2/maps")
+  allsp <- list.files("data2/maps",pattern=".Rds")
   allsp <- gsub("_maps.Rds", "", allsp)
   allsp <- gsub("_pliest", "", allsp)
   allsp <- unique(allsp)
@@ -80,7 +80,8 @@ get_ne <- function(species){
 
 all_ne <- lapply(allsp, get_ne)
 
-all_mean <- lapply(all_ne, function(x) data.frame(species=x$data$species[1], mean_Ne=x$mean_Ne, var_Ne=x$var_Ne))
+all_mean <- lapply(all_ne, function(x) data.frame(species=x$data$species[1],
+                                                  mean_Ne=x$mean_Ne, var_Ne=x$var_Ne))
 all_mean <- do.call(rbind, all_mean) %>%
   rename(Species=species)
 
@@ -94,14 +95,14 @@ traits <- read_excel('data/bird_GD_lifehistory_71species_19102020.xlsx',
   rename(Species=Genus_Species) %>%
   rename(IUCN = GlobalIUCNRedListCategory) %>%
   mutate(IUCN = factor(IUCN, levels=c('LC','NT','VU','EN','CR'))) %>%
-  select(Species, threatenedNonthreatened, Diet_5Cat,
+  dplyr::select(Species, threatenedNonthreatened, Diet_5Cat,
          adultBodyMassGram, flyingOrNot, litterOrClutchSizeNumber,
   movementPatterns,IUCN)
 
 # Heterozygosity---------------------------------------------------------------
 gen <- read_excel('data/bird_GD_lifehistory_71species_19102020.xlsx',
                       sheet='Table S3 GD') %>%
-  select(Species, heterozygosity)
+  dplyr::select(Species, heterozygosity)
 
 names(gen) <- c('Species', 'Het')
 
@@ -119,7 +120,7 @@ dat <- dat %>%
   filter(Species != "Cuculus_canorus") %>%
   filter(Species != "Corvus_cornix_AKA_corvus_corone") %>%
   left_join(all_mean) %>%
-  select(Species, Het, mean_Ne, var_Ne, mass, diet, IUCN, present, past_area_mean,
+  dplyr::select(Species, Het, mean_Ne, var_Ne, mass, diet, IUCN, present, past_area_mean,
          past_area_mean_noholo, past_area_mean_pl_ig, past_area_var)
 
 write.csv(dat, "data/dat_all.csv", row.names=FALSE)
